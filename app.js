@@ -295,10 +295,7 @@
     topbarEl.innerHTML = '';
     topbarEl.classList.remove('board-toolbar', 'is-visible');
 
-    const title = document.createElement('div');
-    title.className = 'title';
-    title.innerHTML = '<b>Link Layouts</b>';
-    topbarEl.appendChild(title);
+    topbarEl.appendChild(buildBrand());
 
     contentEl.className = 'content mode-home';
     contentEl.innerHTML = '<div class="home-intro">Loading your layouts…</div>';
@@ -308,20 +305,63 @@
     topbarEl.innerHTML = '';
     topbarEl.classList.remove('board-toolbar', 'is-visible');
 
+    topbarEl.appendChild(buildBrand());
+
     const title = document.createElement('div');
     title.className = 'title';
-    title.innerHTML = '<b>Link Layouts</b>&nbsp;· ' + state.boards.length + (state.boards.length === 1 ? ' layout' : ' layouts');
+    title.textContent = '· ' + state.boards.length + (state.boards.length === 1 ? ' layout' : ' layouts');
     topbarEl.appendChild(title);
 
     const spacer = document.createElement('div');
     spacer.className = 'topbar-spacer';
     topbarEl.appendChild(spacer);
 
+    topbarEl.appendChild(buildLiveClock());
+
     const status = document.createElement('div');
     status.className = 'db-status-btn db-status-ok';
     status.textContent = '💾';
     status.title = 'Saved on this computer — your links are stored in a local SQLite file, not in the browser';
     topbarEl.appendChild(status);
+  }
+
+  // Logo mark, shared between the home and board toolbars.
+  function buildBrand() {
+    const brand = document.createElement('div');
+    brand.className = 'brand';
+
+    const logo = document.createElement('img');
+    logo.className = 'brand-icon';
+    logo.src = 'RTdbX.png';
+    logo.alt = 'RTdbX';
+
+    brand.appendChild(logo);
+    return brand;
+  }
+
+  function formatClock() {
+    const now = new Date();
+    const date = now.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    const time = now.toLocaleTimeString();
+    return date + ' · ' + time;
+  }
+
+  // A clock (with date) that ticks once a second. Every element with this
+  // class gets updated together, so a fresh one keeps working after re-render.
+  function buildLiveClock() {
+    const clock = document.createElement('div');
+    clock.className = 'live-clock';
+    clock.textContent = formatClock();
+    return clock;
+  }
+
+  function startLiveClock() {
+    setInterval(() => {
+      const text = formatClock();
+      document.querySelectorAll('.live-clock').forEach((el) => {
+        el.textContent = text;
+      });
+    }, 1000);
   }
 
   function renderHomeContent() {
@@ -393,6 +433,7 @@
     list.appendChild(addTile);
 
     contentEl.appendChild(list);
+    contentEl.appendChild(buildBoardFooter());
   }
 
   function renderBoardTopbar(board) {
@@ -403,41 +444,42 @@
     const heading = document.createElement('div');
     heading.className = 'board-heading';
 
+    const brandCol = document.createElement('div');
+    brandCol.className = 'board-brand-col';
+
+    const brandRow = document.createElement('div');
+    brandRow.className = 'board-brand-row';
+    brandRow.appendChild(buildBrand());
+
     const back = document.createElement('button');
     back.className = 'back-btn';
     back.innerHTML = '←';
     back.setAttribute('aria-label', 'Back to all layouts');
+    back.title = 'Return';
     back.addEventListener('click', goHome);
-    heading.appendChild(back);
+    brandRow.appendChild(back);
 
-    const headingCopy = document.createElement('div');
-    headingCopy.className = 'board-heading-copy';
+    brandCol.appendChild(brandRow);
 
-    const appName = document.createElement('div');
-    appName.className = 'board-app-name';
-    appName.textContent = 'Link Layouts';
-    headingCopy.appendChild(appName);
+    const nameDisplay = document.createElement('div');
+    nameDisplay.className = 'board-title-display';
+    nameDisplay.textContent = board.name;
+    nameDisplay.setAttribute('title', 'Rename from Grid settings');
+    brandCol.appendChild(nameDisplay);
 
-    const nameInput = document.createElement('input');
-    nameInput.className = 'board-title-input';
-    nameInput.value = board.name;
-    nameInput.setAttribute('aria-label', 'Layout name');
-    nameInput.addEventListener('change', () => {
-      const value = nameInput.value.trim();
-      const finalName = value || board.name;
-      nameInput.value = finalName;
-      storage.renameBoard(board, finalName);
-    });
-    nameInput.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') nameInput.blur();
-    });
-    headingCopy.appendChild(nameInput);
-    heading.appendChild(headingCopy);
+    heading.appendChild(brandCol);
+
     topbarEl.appendChild(heading);
 
     const actions = document.createElement('div');
     actions.className = 'board-actions';
     topbarEl.appendChild(actions);
+
+    actions.appendChild(buildLiveClock());
+
+    const clockDivider = document.createElement('span');
+    clockDivider.className = 'toolbar-divider';
+    actions.appendChild(clockDivider);
 
     const settingsBtn = document.createElement('button');
     settingsBtn.type = 'button';
@@ -471,12 +513,18 @@
     deleteBoardBtn.textContent = '✕';
     deleteBoardBtn.setAttribute('aria-label', 'Delete layout');
     deleteBoardBtn.title = 'Delete layout';
-    deleteBoardBtn.addEventListener('click', () => {
+    deleteBoardBtn.addEventListener('click', async () => {
       const linkTotal = linkCount(board);
       const warning = linkTotal
-        ? 'Delete "' + board.name + '"? This will permanently remove ' + linkTotal + ' link' + (linkTotal === 1 ? '' : 's') + '. This cannot be undone.'
-        : 'Delete "' + board.name + '"? This cannot be undone.';
-      if (!window.confirm(warning)) return;
+        ? 'This will permanently remove ' + linkTotal + ' link' + (linkTotal === 1 ? '' : 's') + '. This cannot be undone.'
+        : 'This cannot be undone.';
+
+      const confirmed = await openConfirmDialog({
+        title: 'Delete "' + board.name + '"?',
+        message: warning,
+        confirmLabel: 'Delete',
+      });
+      if (!confirmed) return;
 
       storage.deleteBoard(board);
       goHome();
@@ -562,6 +610,29 @@
     contentEl.appendChild(grid);
   }
 
+  function buildBoardFooter() {
+    const footer = document.createElement('div');
+    footer.className = 'board-footer';
+
+    const left = document.createElement('div');
+    left.className = 'board-footer-left';
+    left.textContent = 'RTdbX Traceability Web Application © 2025 Tsukiden Electronics Philippines, Inc.';
+    footer.appendChild(left);
+
+    const right = document.createElement('div');
+    right.className = 'board-footer-right';
+
+    const emailLink = document.createElement('a');
+    emailLink.href = 'mailto:engg-sysdev@tsukiden-ph.com';
+    emailLink.textContent = 'engg-sysdev@tsukiden-ph.com';
+    right.appendChild(emailLink);
+
+    right.appendChild(document.createTextNode(' | Local: 134/115'));
+    footer.appendChild(right);
+
+    return footer;
+  }
+
   function buildCell(board, index) {
     const slot = board.slots[index];
 
@@ -575,53 +646,13 @@
       const label = document.createElement('div');
       label.className = 'slot-label';
       label.textContent = slot.label || domainOf(slot.url);
+      label.title = 'Change link';
       topbar.appendChild(label);
-
-      // Link editor: only visible while the slot is zoomed in (see CSS).
-      const linkEdit = document.createElement('div');
-      linkEdit.className = 'link-edit';
-
-      const linkInput = document.createElement('input');
-      linkInput.className = 'link-edit-input';
-      linkInput.value = slot.url;
-      linkInput.placeholder = 'Paste a new link';
-      linkInput.setAttribute('aria-label', 'Link for slot ' + (index + 1));
-
-      const applyLink = () => {
-        const url = normalizeUrl(linkInput.value);
-        if (!url) {
-          linkInput.value = slot.url;
-          return;
-        }
-        if (url === slot.url) return;
-        storage.saveSlot(board, index, { label: slot.label || '', url });
-      };
-
-      linkInput.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') applyLink();
-        if (event.key === 'Escape') {
-          linkInput.value = slot.url;
-          linkInput.blur();
-        }
-      });
-      linkEdit.appendChild(linkInput);
-
-      const goBtn = document.createElement('button');
-      goBtn.type = 'button';
-      goBtn.className = 'link-edit-btn';
-      goBtn.textContent = 'Go';
-      goBtn.setAttribute('aria-label', 'Load this link');
-      goBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        applyLink();
-      });
-      linkEdit.appendChild(goBtn);
-      topbar.appendChild(linkEdit);
 
       const isExpanded = expandedByBoard[board.id] === index;
       const expandBtn = document.createElement('button');
       expandBtn.className = 'expand-btn';
-      expandBtn.textContent = isExpanded ? '↓' : '↗';
+      expandBtn.textContent = isExpanded ? '↙' : '↗';
       expandBtn.setAttribute('aria-label', (isExpanded ? 'Collapse slot ' : 'Expand slot ') + (index + 1));
       expandBtn.addEventListener('click', (event) => {
         event.stopPropagation();
@@ -639,7 +670,7 @@
 
     if (slot) {
       cell.addEventListener('click', (event) => {
-        if (event.target.closest('.cell-topbar') && !event.target.closest('button, input, .link-edit')) {
+        if (event.target.closest('.cell-topbar') && !event.target.closest('button')) {
           openSettings(board, index);
         }
       });
@@ -667,16 +698,6 @@
         const observer = new ResizeObserver(resizeMonitor);
         observer.observe(viewport);
       }
-
-      const collapseBtn = document.createElement('button');
-      collapseBtn.className = 'collapse-btn';
-      collapseBtn.innerHTML = '✕';
-      collapseBtn.setAttribute('aria-label', 'Collapse back to layout');
-      collapseBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        toggleExpand(board, index);
-      });
-      viewport.appendChild(collapseBtn);
     } else {
       const empty = document.createElement('div');
       empty.className = 'empty-state';
@@ -722,6 +743,16 @@
     const heading = document.createElement('h3');
     heading.textContent = 'Grid settings';
     modal.appendChild(heading);
+
+    const nameLabel = document.createElement('div');
+    nameLabel.className = 'settings-field-label';
+    nameLabel.textContent = 'Layout name';
+    modal.appendChild(nameLabel);
+
+    const nameInput = document.createElement('input');
+    nameInput.value = board.name;
+    nameInput.setAttribute('aria-label', 'Layout name');
+    modal.appendChild(nameInput);
 
     const countLabel = document.createElement('div');
     countLabel.className = 'settings-field-label';
@@ -775,14 +806,24 @@
     const saveBtn = document.createElement('button');
     saveBtn.className = 'save';
     saveBtn.textContent = 'Apply';
-    saveBtn.addEventListener('click', () => {
+    saveBtn.addEventListener('click', async () => {
       const slotCount = modeSelect.value === 'solo'
         ? 1
         : Math.min(20, Math.max(1, Number.parseInt(countInput.value, 10) || board.slots.length));
       const removedLinks = board.slots.slice(slotCount).filter(Boolean).length;
 
-      if (removedLinks && !window.confirm('Reducing the grid will remove ' + removedLinks + ' link' + (removedLinks === 1 ? '' : 's') + '. Continue?')) {
-        return;
+      if (removedLinks) {
+        const confirmed = await openConfirmDialog({
+          title: 'Reduce the grid?',
+          message: 'This will remove ' + removedLinks + ' link' + (removedLinks === 1 ? '' : 's') + '. This cannot be undone.',
+          confirmLabel: 'Reduce',
+        });
+        if (!confirmed) return;
+      }
+
+      const newName = nameInput.value.trim();
+      if (newName && newName !== board.name) {
+        storage.renameBoard(board, newName);
       }
 
       storage.resizeBoard(board, slotCount, modeSelect.value);
@@ -793,11 +834,68 @@
     modal.appendChild(row);
     backdrop.appendChild(modal);
     document.body.appendChild(backdrop);
-    countInput.focus();
+    nameInput.focus();
+    nameInput.select();
 
     function close() {
       if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
     }
+  }
+
+  // In-app confirmation dialog, styled the same as the settings/notify
+  // modals used elsewhere (add link, grid settings) instead of the
+  // browser's native window.confirm() popup.
+  function openConfirmDialog({ title, message, confirmLabel }) {
+    return new Promise((resolve) => {
+      const backdrop = document.createElement('div');
+      backdrop.className = 'settings-backdrop';
+      backdrop.addEventListener('click', (event) => {
+        if (event.target === backdrop) finish(false);
+      });
+
+      const modal = document.createElement('div');
+      modal.className = 'settings-modal';
+
+      const heading = document.createElement('h3');
+      heading.textContent = title || 'Are you sure?';
+      modal.appendChild(heading);
+
+      const body = document.createElement('div');
+      body.className = 'settings-message';
+      body.textContent = message || '';
+      modal.appendChild(body);
+
+      const row = document.createElement('div');
+      row.className = 'settings-row-buttons';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.addEventListener('click', () => finish(false));
+      row.appendChild(cancelBtn);
+
+      const confirmBtn = document.createElement('button');
+      confirmBtn.className = 'danger';
+      confirmBtn.textContent = confirmLabel || 'Confirm';
+      confirmBtn.addEventListener('click', () => finish(true));
+      row.appendChild(confirmBtn);
+
+      modal.appendChild(row);
+      backdrop.appendChild(modal);
+      document.body.appendChild(backdrop);
+      confirmBtn.focus();
+
+      document.addEventListener('keydown', onKeydown);
+
+      function onKeydown(event) {
+        if (event.key === 'Escape') finish(false);
+      }
+
+      function finish(result) {
+        document.removeEventListener('keydown', onKeydown);
+        if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
+        resolve(result);
+      }
+    });
   }
 
   function toggleExpand(board, index) {
@@ -813,7 +911,7 @@
 
       const expandBtn = cell.querySelector('.expand-btn');
       if (expandBtn) {
-        expandBtn.textContent = isExpanded ? '↓' : '↗';
+        expandBtn.textContent = isExpanded ? '↙' : '↗';
         expandBtn.setAttribute('aria-label', (isExpanded ? 'Collapse slot ' : 'Expand slot ') + (cellIndex + 1));
       }
 
@@ -986,5 +1084,6 @@
     }
   }
 
+  startLiveClock();
   initStorage();
 })();
