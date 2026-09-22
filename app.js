@@ -65,33 +65,13 @@
 
   const db = window.linkDB;
 
-  // If the database can't be opened or a write fails, this becomes visible
-  // in the interface (once) instead of only being logged to devtools, so a
-  // silent storage failure is never mistaken for a save that worked.
-  let warnedOffline = false;
-  function showStorageWarning(message) {
-    if (warnedOffline) return;
-    warnedOffline = true;
-    const banner = document.createElement('div');
-    banner.className = 'storage-warning-banner';
-    banner.textContent = '⚠ Links are NOT being saved to disk: ' + message;
-    Object.assign(banner.style, {
-      position: 'fixed', top: '0', left: '0', right: '0', zIndex: '99999',
-      background: '#5c1a1a', color: '#fff', padding: '10px 16px',
-      fontFamily: 'sans-serif', fontSize: '13px', textAlign: 'center',
-    });
-    document.body.appendChild(banner);
-  }
-
   // The UI is updated first; the write happens right after. A failure is
-  // now surfaced to the user, not just logged, so it never looks like a
-  // save succeeded when it actually didn't reach the database file.
+  // logged to devtools console only (no on-screen banner).
   function save(task) {
     return Promise.resolve()
       .then(task)
       .catch((error) => {
         console.error('Link Layouts: could not save to the database.', error);
-        showStorageWarning(error && error.message ? error.message : String(error));
       });
   }
 
@@ -101,7 +81,7 @@
     try {
       const status = await db.status();
       if (!status || !status.ok) {
-        showStorageWarning((status && status.error) || 'the database file could not be opened');
+        console.error('Link Layouts: database status not ok.', (status && status.error) || 'the database file could not be opened');
       }
 
       state.boards = await db.listBoards();
@@ -113,7 +93,6 @@
       }
     } catch (error) {
       console.error('Link Layouts: could not open the database.', error);
-      showStorageWarning(error && error.message ? error.message : String(error));
       state.boards = [blankBoard('Layout 1')];
     }
 
@@ -340,8 +319,8 @@
 
     const status = document.createElement('div');
     status.className = 'db-status-btn db-status-ok';
-    status.textContent = '💾 Saved on this computer';
-    status.title = 'Your links are stored in a local SQLite file, not in the browser';
+    status.textContent = '💾';
+    status.title = 'Saved on this computer — your links are stored in a local SQLite file, not in the browser';
     topbarEl.appendChild(status);
   }
 
