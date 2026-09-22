@@ -472,6 +472,12 @@
     deleteBoardBtn.setAttribute('aria-label', 'Delete layout');
     deleteBoardBtn.title = 'Delete layout';
     deleteBoardBtn.addEventListener('click', () => {
+      const linkTotal = linkCount(board);
+      const warning = linkTotal
+        ? 'Delete "' + board.name + '"? This will permanently remove ' + linkTotal + ' link' + (linkTotal === 1 ? '' : 's') + '. This cannot be undone.'
+        : 'Delete "' + board.name + '"? This cannot be undone.';
+      if (!window.confirm(warning)) return;
+
       storage.deleteBoard(board);
       goHome();
     });

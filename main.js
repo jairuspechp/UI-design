@@ -1,16 +1,19 @@
-// Link Layouts desktop shell: opens index.html in a window and stores
-// everything in db.sqlite, kept right inside this project folder (next to
-// main.js) rather than the OS-level userData folder. That's deliberate: it
-// lets the database travel with the project when you commit and push it to
-// GitHub, so pulling the repo on another machine brings your links with it.
-//
-// Caveat: this only works reliably when running from source (npm start).
-// A packaged/portable .exe usually runs from a temporary extraction
-// folder, so this path would not persist between launches once built —
-// worth revisiting if you ever ship a packaged build to someone else.
-
 const path = require('path');
 const { app, BrowserWindow, ipcMain, session, shell } = require('electron');
+
+function resolveDbFile() {
+  if (!app.isPackaged) {
+    // Dev mode: keep it in the project folder so it can be committed.
+    return path.join(__dirname, 'db.sqlite');
+  }
+  if (process.env.PORTABLE_EXECUTABLE_DIR) {
+    // Portable build: write next to the actual .exe, not the temp
+    // extraction folder main.js is running from.
+    return path.join(process.env.PORTABLE_EXECUTABLE_DIR, 'db.sqlite');
+  }
+  // Installed build (nsis/dir target): standard per-user data folder.
+  return path.join(app.getPath('userData'), 'db.sqlite');
+}
 
 let store = null;   // the open database, or null if it could not be opened
 let dbFile = '';
@@ -28,7 +31,7 @@ let readyToClose = false;
 // instead of failing silently and losing what they type.
 function openStore() {
   try {
-    dbFile = path.join(__dirname, 'db.sqlite');
+    dbFile = resolveDbFile();
 
     const { openDatabase } = require('./db');
     store = openDatabase(dbFile);
