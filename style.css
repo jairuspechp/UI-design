@@ -189,6 +189,7 @@ textarea {
 }
 
 .board-menu-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -196,16 +197,62 @@ textarea {
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: #ffffff;
   font-size: 16px;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.15s ease, color 0.15s ease;
+  overflow: hidden;
+  z-index: 0;
 }
 
-.board-menu-item:hover {
-  background: var(--focus);
-  color: #04140d;
+.board-menu-item::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, var(--nav) 0%, var(--nav) 60%, transparent 100%);
+  border-radius: 8px;
+  transform: scaleX(0);
+  transform-origin: left center;
+  z-index: -1;
+  transition: transform 0.35s ease;
+}
+
+.board-menu-item span {
+  background-image: linear-gradient(
+    to right,
+    #ffffff 0%,
+    #ffffff 50%,
+    var(--focus) 50%,
+    var(--focus) 100%
+  );
+  background-size: 200% 100%;
+  background-position: 100% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  transition: background-position 0.35s ease;
+}
+.board-menu-item {
+  color: #ffffff;
+}
+
+.board-menu-item::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, var(--focus) 0%, var(--focus) 60%, transparent 100%);
+  border-radius: 8px;
+  transform: scaleX(0);
+  transform-origin: left center;
+  z-index: -1;
+  transition: transform 0.35s ease;
+}
+
+.board-menu-item:hover::before {
+  transform: scaleX(1);
+}
+
+.board-menu-item:hover span {
+  background-position: 0% 0;
 }
 
 .board-menu-item-icon {
@@ -611,7 +658,7 @@ textarea {
 .cell-topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   padding: 10px 14px 0;
   flex-shrink: 0;
   gap: 8px;
@@ -652,6 +699,7 @@ textarea {
   line-height: 1;
   cursor: pointer;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .expand-btn:hover {
@@ -955,4 +1003,26 @@ body.graph-only-mode .exit-graph-only-btn:hover {
   background: rgba(23, 60, 60, 0.85);
   color: #ffffff;
   border-color: rgba(255, 255, 255, 0.4);
+}
+
+@keyframes icon-fly-in {
+  0% {
+    transform: scale(0.15);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.brand-icon {
+  height: 24px;
+  width: auto;
+  display: block;
+  animation: icon-fly-in 0.45s ease;
 }

@@ -751,12 +751,14 @@
     topbar.className = 'cell-topbar';
 
     if (slot) {
-      const label = document.createElement('div');
-      label.className = 'slot-label';
-      label.textContent = slot.label || domainOf(slot.url);
-      topbar.appendChild(label);
-
-      const isExpanded = expandedByBoard[board.id] === index;
+  if (slot.label) {
+    const label = document.createElement('div');
+    label.className = 'slot-label';
+    label.textContent = slot.label;
+    topbar.appendChild(label);
+  }
+  
+const isExpanded = expandedByBoard[board.id] === index;
       const expandBtn = document.createElement('button');
       expandBtn.className = 'expand-btn';
       expandBtn.textContent = isExpanded ? '↙' : '↗';
@@ -1123,7 +1125,7 @@
     const countInput = document.createElement('input');
     countInput.type = 'number';
     countInput.min = '1';
-    countInput.max = '20';
+    countInput.max = '8';
     countInput.value = '4';
     modal.appendChild(countInput);
 
