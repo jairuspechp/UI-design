@@ -461,9 +461,6 @@
     const heading = document.createElement('div');
     heading.className = 'board-heading';
 
-    const brandCol = document.createElement('div');
-    brandCol.className = 'board-brand-col';
-
     const brandRow = document.createElement('div');
     brandRow.className = 'board-brand-row';
 
@@ -537,15 +534,13 @@
 
     brandRow.appendChild(buildBrand());
 
-    brandCol.appendChild(brandRow);
-
     const nameDisplay = document.createElement('div');
     nameDisplay.className = 'board-title-display';
     nameDisplay.textContent = board.name;
     nameDisplay.setAttribute('title', 'Rename from grid setting');
-    brandCol.appendChild(nameDisplay);
+    brandRow.appendChild(nameDisplay);
 
-    heading.appendChild(brandCol);
+    heading.appendChild(brandRow);
 
     topbarEl.appendChild(heading);
 
@@ -751,14 +746,14 @@
     topbar.className = 'cell-topbar';
 
     if (slot) {
-  if (slot.label) {
-    const label = document.createElement('div');
-    label.className = 'slot-label';
-    label.textContent = slot.label;
-    topbar.appendChild(label);
-  }
-  
-const isExpanded = expandedByBoard[board.id] === index;
+      if (slot.label) {
+        const label = document.createElement('div');
+        label.className = 'slot-label';
+        label.textContent = slot.label;
+        topbar.appendChild(label);
+      }
+
+      const isExpanded = expandedByBoard[board.id] === index;
       const expandBtn = document.createElement('button');
       expandBtn.className = 'expand-btn';
       expandBtn.textContent = isExpanded ? '↙' : '↗';
