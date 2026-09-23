@@ -16,6 +16,18 @@
   let activeBoardId = null;
   let activeCellEls = [];
 
+  // Tracks the currently-open board-menu flyout (if any) so a single
+  // document-level click listener can close it when the user clicks
+  // elsewhere, without stacking a new listener on every re-render.
+  let activeMenuWrap = null;
+
+  document.addEventListener('click', (event) => {
+    if (activeMenuWrap && !activeMenuWrap.contains(event.target)) {
+      activeMenuWrap.classList.remove('open');
+      activeMenuWrap = null;
+    }
+  });
+
   const topbarEl = document.getElementById('topbar');
   const contentEl = document.getElementById('content');
 
@@ -45,11 +57,15 @@
     return 'b' + Date.now() + Math.floor(Math.random() * 1000);
   }
 
-  function blankBoard(name, slotCount, layoutMode) {
+  function blankBoard(name, slotCount, layoutMode, description) {
     return {
       id: makeLocalId(),
       name,
       layoutMode: layoutMode || 'standard',
+      // Only ever shown back to the user in the "Create new layout" dialog
+      // itself — a note for their own reference, not displayed on tiles
+      // or in Grid settings.
+      description: description || '',
       slots: Array.from({ length: slotCount || 4 }, () => null),
     };
   }
@@ -101,14 +117,15 @@
   }
 
   const storage = {
-    createBoard(name, slotCount, layoutMode) {
-      const board = blankBoard(name, slotCount, layoutMode);
+    createBoard(name, slotCount, layoutMode, description) {
+      const board = blankBoard(name, slotCount, layoutMode, description);
       state.boards.push(board);
       save(() => db.createBoard({
         id: board.id,
         name: board.name,
         slotCount: board.slots.length,
         layoutMode: board.layoutMode,
+        description: board.description,
       }));
 
       render();
@@ -449,22 +466,83 @@
 
     const brandRow = document.createElement('div');
     brandRow.className = 'board-brand-row';
-    brandRow.appendChild(buildBrand());
 
-    const back = document.createElement('button');
-    back.className = 'back-btn';
-    back.innerHTML = '←';
-    back.setAttribute('aria-label', 'Back to all layouts');
-    back.title = 'Return';
-    back.addEventListener('click', goHome);
-    brandRow.appendChild(back);
+    // Menu flyout: houses "Grid settings", "Change link" (for whichever
+    // slot is currently expanded) and "Grid Layouts". Sits to
+    // the left of the brand icon.
+    const menuWrap = document.createElement('div');
+    menuWrap.className = 'board-menu-wrap';
+
+    const menuBtn = document.createElement('button');
+    menuBtn.type = 'button';
+    menuBtn.className = 'board-menu-btn';
+    menuBtn.innerHTML = '☰';
+    menuBtn.setAttribute('aria-label', 'Open menu');
+    menuBtn.setAttribute('aria-expanded', 'false');
+    menuBtn.title = 'Menu';
+
+    const menuPanel = document.createElement('div');
+    menuPanel.className = 'board-menu-panel';
+
+    function closeMenu() {
+      menuWrap.classList.remove('open');
+      menuBtn.setAttribute('aria-expanded', 'false');
+      if (activeMenuWrap === menuWrap) activeMenuWrap = null;
+    }
+
+    menuBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const isOpen = menuWrap.classList.toggle('open');
+      menuBtn.setAttribute('aria-expanded', String(isOpen));
+      activeMenuWrap = isOpen ? menuWrap : null;
+    });
+
+    const settingsItem = document.createElement('button');
+    settingsItem.type = 'button';
+    settingsItem.className = 'board-menu-item';
+    settingsItem.innerHTML = '<span class="board-menu-item-icon">⚙</span><span>grid setting</span>';
+    settingsItem.addEventListener('click', (event) => {
+      event.stopPropagation();
+      closeMenu();
+      openGridSettings(board);
+    });
+
+    const changeLinkItem = document.createElement('button');
+    changeLinkItem.type = 'button';
+    changeLinkItem.className = 'board-menu-item';
+    changeLinkItem.innerHTML = '<span class="board-menu-item-icon">🔗</span><span>Change link</span>';
+    changeLinkItem.addEventListener('click', (event) => {
+      event.stopPropagation();
+      closeMenu();
+      const currentIndex = expandedByBoard[board.id];
+      if (Number.isInteger(currentIndex)) openSettings(board, currentIndex);
+    });
+
+    const returnItem = document.createElement('button');
+    returnItem.type = 'button';
+    returnItem.className = 'board-menu-item';
+    returnItem.innerHTML = '<span class="board-menu-item-icon">⌂</span><span>Grid Layouts</span>';
+    returnItem.addEventListener('click', (event) => {
+      event.stopPropagation();
+      closeMenu();
+      goHome();
+    });
+
+    menuPanel.appendChild(settingsItem);
+    menuPanel.appendChild(changeLinkItem);
+    menuPanel.appendChild(returnItem);
+    menuWrap.appendChild(menuBtn);
+    menuWrap.appendChild(menuPanel);
+    brandRow.appendChild(menuWrap);
+
+    brandRow.appendChild(buildBrand());
 
     brandCol.appendChild(brandRow);
 
     const nameDisplay = document.createElement('div');
     nameDisplay.className = 'board-title-display';
     nameDisplay.textContent = board.name;
-    nameDisplay.setAttribute('title', 'Rename from Grid settings');
+    nameDisplay.setAttribute('title', 'Rename from grid setting');
     brandCol.appendChild(nameDisplay);
 
     heading.appendChild(brandCol);
@@ -481,19 +559,6 @@
     clockDivider.className = 'toolbar-divider';
     actions.appendChild(clockDivider);
 
-    const settingsBtn = document.createElement('button');
-    settingsBtn.type = 'button';
-    settingsBtn.className = 'toolbar-icon-btn grid-settings-btn';
-    settingsBtn.textContent = '⚙';
-    settingsBtn.setAttribute('aria-label', 'Change grid settings');
-    settingsBtn.title = 'Grid settings';
-    settingsBtn.addEventListener('click', () => openGridSettings(board));
-    actions.appendChild(settingsBtn);
-
-    const settingsDivider = document.createElement('span');
-    settingsDivider.className = 'toolbar-divider';
-    actions.appendChild(settingsDivider);
-
     const fullscreenBtn = document.createElement('button');
     fullscreenBtn.type = 'button';
     fullscreenBtn.className = 'toolbar-icon-btn fullscreen-btn';
@@ -506,6 +571,19 @@
     const fullscreenDivider = document.createElement('span');
     fullscreenDivider.className = 'toolbar-divider';
     actions.appendChild(fullscreenDivider);
+
+    const graphOnlyBtn = document.createElement('button');
+    graphOnlyBtn.type = 'button';
+    graphOnlyBtn.className = 'toolbar-icon-btn graph-only-btn';
+    graphOnlyBtn.textContent = '▣';
+    graphOnlyBtn.setAttribute('aria-label', 'Hide dashboard controls');
+    graphOnlyBtn.title = 'Graph only';
+    graphOnlyBtn.addEventListener('click', toggleGraphOnly);
+    actions.appendChild(graphOnlyBtn);
+
+    const graphOnlyDivider = document.createElement('span');
+    graphOnlyDivider.className = 'toolbar-divider';
+    actions.appendChild(graphOnlyDivider);
 
     const deleteBoardBtn = document.createElement('button');
     deleteBoardBtn.type = 'button';
@@ -530,19 +608,6 @@
       goHome();
     });
     actions.appendChild(deleteBoardBtn);
-
-    const deleteDivider = document.createElement('span');
-    deleteDivider.className = 'toolbar-divider';
-    actions.appendChild(deleteDivider);
-
-    const graphOnlyBtn = document.createElement('button');
-    graphOnlyBtn.type = 'button';
-    graphOnlyBtn.className = 'toolbar-icon-btn graph-only-btn';
-    graphOnlyBtn.textContent = '▣';
-    graphOnlyBtn.setAttribute('aria-label', 'Hide dashboard controls');
-    graphOnlyBtn.title = 'Graph only';
-    graphOnlyBtn.addEventListener('click', toggleGraphOnly);
-    actions.appendChild(graphOnlyBtn);
   }
 
   function toggleFullscreen() {
@@ -556,6 +621,44 @@
     }
   }
 
+  // Auto-hides the bottom (⛶) button after a few seconds of no mouse
+  // activity — in the normal windowed view, in real browser full screen,
+  // and in Graph Only mode alike. Moving the mouse brings it back and
+  // restarts the idle countdown.
+  let fsIdleHideTimer = null;
+
+  function clearFsIdleHideTimer() {
+    if (fsIdleHideTimer) {
+      clearTimeout(fsIdleHideTimer);
+      fsIdleHideTimer = null;
+    }
+  }
+
+  function showFullscreenGridBtn() {
+    document.querySelectorAll('.fullscreen-grid-btn').forEach((button) => {
+      button.classList.remove('idle-hide');
+    });
+  }
+
+  function scheduleFullscreenGridBtnHide() {
+    clearFsIdleHideTimer();
+    fsIdleHideTimer = setTimeout(() => {
+      document.querySelectorAll('.fullscreen-grid-btn').forEach((button) => {
+        button.classList.add('idle-hide');
+      });
+    }, 3000);
+  }
+
+  document.addEventListener('mousemove', () => {
+    showFullscreenGridBtn();
+    scheduleFullscreenGridBtnHide();
+  });
+
+  document.addEventListener('fullscreenchange', () => {
+    showFullscreenGridBtn();
+    scheduleFullscreenGridBtnHide();
+  });
+
   function toggleGraphOnly() {
     const enabled = document.body.classList.toggle('graph-only-mode');
 
@@ -564,6 +667,9 @@
       button.setAttribute('aria-label', enabled ? 'Show dashboard controls' : 'Hide dashboard controls');
       button.title = enabled ? 'Show controls' : 'Graph only';
     });
+
+    showFullscreenGridBtn();
+    scheduleFullscreenGridBtnHide();
   }
 
   function renderBoardContent(board) {
@@ -608,6 +714,8 @@
     });
 
     contentEl.appendChild(grid);
+    showFullscreenGridBtn();
+    scheduleFullscreenGridBtnHide();
   }
 
   function buildBoardFooter() {
@@ -646,7 +754,6 @@
       const label = document.createElement('div');
       label.className = 'slot-label';
       label.textContent = slot.label || domainOf(slot.url);
-      label.title = 'Change link';
       topbar.appendChild(label);
 
       const isExpanded = expandedByBoard[board.id] === index;
@@ -667,14 +774,6 @@
     }
 
     cell.appendChild(topbar);
-
-    if (slot) {
-      cell.addEventListener('click', (event) => {
-        if (event.target.closest('.cell-topbar') && !event.target.closest('button')) {
-          openSettings(board, index);
-        }
-      });
-    }
 
     const viewport = document.createElement('div');
     viewport.className = 'cell-viewport';
@@ -741,7 +840,7 @@
     modal.className = 'settings-modal';
 
     const heading = document.createElement('h3');
-    heading.textContent = 'Grid settings';
+    heading.textContent = 'grid setting';
     modal.appendChild(heading);
 
     const nameLabel = document.createElement('div');
@@ -843,7 +942,7 @@
   }
 
   // In-app confirmation dialog, styled the same as the settings/notify
-  // modals used elsewhere (add link, grid settings) instead of the
+  // modals used elsewhere (add link, grid setting) instead of the
   // browser's native window.confirm() popup.
   function openConfirmDialog({ title, message, confirmLabel }) {
     return new Promise((resolve) => {
