@@ -75,41 +75,60 @@
   }
 
   // ----------------------------------------------------------------------
-  // SQLite storage. The database lives in a file on disk, managed by the
-  // desktop shell (main.js) and reached through window.linkDB (preload.js).
+  // Browser storage. Every layout and link is saved in the browser's
+  // localStorage, so the UI comes back exactly as you left it next time you
+  // open the page. It stays until the browser's site data is cleared.
   // ----------------------------------------------------------------------
 
-  const db = window.linkDB;
+  const BOARDS_KEY = 'link-grid-boards-v1';
+  const MODES = ['standard', 'horizontal', 'solo', 'three'];
 
-  // The UI is updated first; the write happens right after. A failure is
-  // logged to devtools console only (no on-screen banner).
-  function save(task) {
-    return Promise.resolve()
-      .then(task)
-      .catch((error) => {
-        console.error('Link Layouts: could not save to the database.', error);
-      });
+  // Ask the browser not to evict this site's data when disk space is low.
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist().catch(() => {});
   }
 
-  async function initStorage() {
-    readNav();
-
+  function loadBoards() {
     try {
-      const status = await db.status();
-      if (!status || !status.ok) {
-        console.error('Link Layouts: database status not ok.', (status && status.error) || 'the database file could not be opened');
-      }
+      const raw = localStorage.getItem(BOARDS_KEY);
+      if (!raw) return [];
 
-      state.boards = await db.listBoards();
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
 
-      if (!state.boards.length) {
-        const board = blankBoard('Layout 1');
-        state.boards.push(board);
-        await db.createBoard({ id: board.id, name: board.name, slotCount: 4, layoutMode: board.layoutMode });
-      }
+      return parsed
+        .filter((board) => board && typeof board.id === 'string')
+        .map((board) => ({
+          id: board.id,
+          name: String(board.name || 'Untitled'),
+          layoutMode: MODES.includes(board.layoutMode) ? board.layoutMode : 'standard',
+          description: board.description || '',
+          slots: Array.isArray(board.slots)
+            ? board.slots.map((s) => (s && s.url ? { label: s.label || '', url: s.url } : null))
+            : [null, null, null, null],
+        }));
     } catch (error) {
-      console.error('Link Layouts: could not open the database.', error);
-      state.boards = [blankBoard('Layout 1')];
+      console.error('Link Layouts: saved layouts could not be read.', error);
+      return [];
+    }
+  }
+
+  // Writes the whole list of boards. Called after every change.
+  function persist() {
+    try {
+      localStorage.setItem(BOARDS_KEY, JSON.stringify(state.boards));
+    } catch (error) {
+      console.error('Link Layouts: could not save to browser storage.', error);
+    }
+  }
+
+  function initStorage() {
+    readNav();
+    state.boards = loadBoards();
+
+    if (!state.boards.length) {
+      state.boards.push(blankBoard('Layout 1'));
+      persist();
     }
 
     state.loaded = true;
@@ -120,13 +139,7 @@
     createBoard(name, slotCount, layoutMode, description) {
       const board = blankBoard(name, slotCount, layoutMode, description);
       state.boards.push(board);
-      save(() => db.createBoard({
-        id: board.id,
-        name: board.name,
-        slotCount: board.slots.length,
-        layoutMode: board.layoutMode,
-        description: board.description,
-      }));
+      persist();
 
       render();
       return Promise.resolve(board.id);
@@ -134,18 +147,16 @@
 
     renameBoard(board, name) {
       board.name = name;
-      save(() => db.renameBoard(board.id, name));
+      persist();
     },
 
     deleteBoard(board) {
       state.boards = state.boards.filter((item) => item.id !== board.id);
-      save(() => db.deleteBoard(board.id));
 
       if (!state.boards.length) {
-        const fresh = blankBoard('Layout 1');
-        state.boards.push(fresh);
-        save(() => db.createBoard({ id: fresh.id, name: fresh.name, slotCount: 4, layoutMode: fresh.layoutMode }));
+        state.boards.push(blankBoard('Layout 1'));
       }
+      persist();
     },
 
     resizeBoard(board, slotCount, layoutMode) {
@@ -155,7 +166,7 @@
       board.slots = newSlots;
       board.layoutMode = layoutMode;
       expandedByBoard[board.id] = null;
-      save(() => db.setLayout(board.id, slotCount, layoutMode));
+      persist();
 
       render();
     },
@@ -164,12 +175,7 @@
       const newSlots = board.slots.slice();
       newSlots[index] = dataOrNull;
       board.slots = newSlots;
-
-      if (dataOrNull) {
-        save(() => db.saveSlot(board.id, index, { label: dataOrNull.label || '', url: dataOrNull.url }));
-      } else {
-        save(() => db.clearSlot(board.id, index));
-      }
+      persist();
 
       if (state.currentBoardId === board.id) {
         refreshCell(board, index);
@@ -338,7 +344,7 @@
     const status = document.createElement('div');
     status.className = 'db-status-btn db-status-ok';
     status.textContent = '💾';
-    status.title = 'Saved on this computer — your links are stored in a local SQLite file, not in the browser';
+    status.title = 'Saved in this browser — your layouts stay until the browser\'s site data is cleared';
     topbarEl.appendChild(status);
   }
 
