@@ -1,0 +1,282 @@
+/*
+ * dialogs.js
+ *
+ * The pop-up windows: grid settings, "Create new layout" and the
+ * Are-you-sure confirmation. (The Add/Edit link dialog is in link-slots.js,
+ * the shortcut list is in shortcuts.js.)
+ */
+(function () {
+  const LG = window.LinkGrid;
+  const { state, storage, expandedByBoard, ui } = LG;
+  const topbarEl = document.getElementById('topbar');
+  const contentEl = document.getElementById('content');
+
+  const MAX_SLOTS = LG.MAX_SLOTS;
+
+  function openGridSettings(board) {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'settings-backdrop';
+    backdrop.addEventListener('click', (event) => {
+      if (event.target === backdrop) close();
+    });
+
+    const modal = document.createElement('div');
+    modal.className = 'settings-modal';
+
+    const heading = document.createElement('h3');
+    heading.textContent = 'grid setting';
+    modal.appendChild(heading);
+
+    const nameLabel = document.createElement('div');
+    nameLabel.className = 'settings-field-label';
+    nameLabel.textContent = 'Layout name';
+    modal.appendChild(nameLabel);
+
+    const nameInput = document.createElement('input');
+    nameInput.value = board.name;
+    nameInput.setAttribute('aria-label', 'Layout name');
+    modal.appendChild(nameInput);
+
+    const countLabel = document.createElement('div');
+    countLabel.className = 'settings-field-label';
+    countLabel.textContent = 'Number of slots';
+    modal.appendChild(countLabel);
+
+    const countInput = document.createElement('input');
+    countInput.type = 'number';
+    countInput.min = '1';
+    countInput.max = String(MAX_SLOTS);
+    countInput.value = board.slots.length;
+    modal.appendChild(countInput);
+
+    const modeLabel = document.createElement('div');
+    modeLabel.className = 'settings-field-label';
+    modeLabel.textContent = 'Layout style';
+    modal.appendChild(modeLabel);
+
+    const modeSelect = document.createElement('select');
+    modeSelect.className = 'settings-select';
+    [
+      ['standard', 'Balanced (auto-fit)'],
+      ['horizontal', 'Horizontal (one row)'],
+      ['solo', 'Solo (one full-space slot)'],
+      ['three', 'Three across'],
+    ].forEach(([value, label]) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      option.selected = value === board.layoutMode;
+      modeSelect.appendChild(option);
+    });
+    modeSelect.addEventListener('change', () => {
+      if (modeSelect.value === 'solo') countInput.value = '1';
+    });
+    modal.appendChild(modeSelect);
+
+    const hint = document.createElement('div');
+    hint.className = 'settings-hint';
+    hint.textContent = 'Existing links are kept when the grid grows.';
+    modal.appendChild(hint);
+
+    const row = document.createElement('div');
+    row.className = 'settings-row-buttons';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', close);
+    row.appendChild(cancelBtn);
+
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'save';
+    saveBtn.textContent = 'Apply';
+    saveBtn.addEventListener('click', async () => {
+      const slotCount = modeSelect.value === 'solo'
+        ? 1
+        : Math.min(MAX_SLOTS, Math.max(1, Number.parseInt(countInput.value, 10) || board.slots.length));
+      const removedLinks = board.slots.slice(slotCount).filter(Boolean).length;
+
+      if (removedLinks) {
+        const confirmed = await openConfirmDialog({
+          title: 'Reduce the grid?',
+          message: 'This will remove ' + removedLinks + ' link' + (removedLinks === 1 ? '' : 's') + '. This cannot be undone.',
+          confirmLabel: 'Reduce',
+        });
+        if (!confirmed) return;
+      }
+
+      const newName = nameInput.value.trim();
+      if (newName && newName !== board.name) {
+        storage.renameBoard(board, newName);
+      }
+
+      storage.resizeBoard(board, slotCount, modeSelect.value);
+      close();
+    });
+    row.appendChild(saveBtn);
+
+    modal.appendChild(row);
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+    nameInput.focus();
+    nameInput.select();
+
+    function close() {
+      if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
+    }
+  }
+
+  // In-app confirmation dialog, styled the same as the settings/notify
+  // modals used elsewhere (add link, grid setting) instead of the
+  // browser's native window.confirm() popup.
+  function openConfirmDialog({ title, message, confirmLabel }) {
+    return new Promise((resolve) => {
+      const backdrop = document.createElement('div');
+      backdrop.className = 'settings-backdrop';
+      backdrop.addEventListener('click', (event) => {
+        if (event.target === backdrop) finish(false);
+      });
+
+      const modal = document.createElement('div');
+      modal.className = 'settings-modal';
+
+      const heading = document.createElement('h3');
+      heading.textContent = title || 'Are you sure?';
+      modal.appendChild(heading);
+
+      const body = document.createElement('div');
+      body.className = 'settings-message';
+      body.textContent = message || '';
+      modal.appendChild(body);
+
+      const row = document.createElement('div');
+      row.className = 'settings-row-buttons';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.addEventListener('click', () => finish(false));
+      row.appendChild(cancelBtn);
+
+      const confirmBtn = document.createElement('button');
+      confirmBtn.className = 'danger';
+      confirmBtn.textContent = confirmLabel || 'Confirm';
+      confirmBtn.addEventListener('click', () => finish(true));
+      row.appendChild(confirmBtn);
+
+      modal.appendChild(row);
+      backdrop.appendChild(modal);
+      document.body.appendChild(backdrop);
+      confirmBtn.focus();
+
+      document.addEventListener('keydown', onKeydown);
+
+      function onKeydown(event) {
+        if (event.key === 'Escape') finish(false);
+      }
+
+      function finish(result) {
+        document.removeEventListener('keydown', onKeydown);
+        if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
+        resolve(result);
+      }
+    });
+  }
+
+  function openNewGridDialog() {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'settings-backdrop';
+    backdrop.addEventListener('click', (event) => {
+      if (event.target === backdrop) close();
+    });
+
+    const modal = document.createElement('div');
+    modal.className = 'settings-modal';
+
+    const heading = document.createElement('h3');
+    heading.textContent = 'Create new layout';
+    modal.appendChild(heading);
+
+    const nameLabel = document.createElement('div');
+    nameLabel.className = 'settings-field-label';
+    nameLabel.textContent = 'Layout name';
+    modal.appendChild(nameLabel);
+
+    const nameInput = document.createElement('input');
+    nameInput.placeholder = 'Layout ' + (state.boards.length + 1);
+    nameInput.value = 'Layout ' + (state.boards.length + 1);
+    modal.appendChild(nameInput);
+
+    const countLabel = document.createElement('div');
+    countLabel.className = 'settings-field-label';
+    countLabel.textContent = 'Number of slots';
+    modal.appendChild(countLabel);
+
+    const countInput = document.createElement('input');
+    countInput.type = 'number';
+    countInput.min = '1';
+    countInput.max = String(MAX_SLOTS);
+    countInput.value = '4';
+    modal.appendChild(countInput);
+
+    const modeLabel = document.createElement('div');
+    modeLabel.className = 'settings-field-label';
+    modeLabel.textContent = 'Layout style';
+    modal.appendChild(modeLabel);
+
+    const modeSelect = document.createElement('select');
+    modeSelect.className = 'settings-select';
+    [
+      ['standard', 'Balanced (auto-fit)'],
+      ['horizontal', 'Horizontal (one row)'],
+      ['solo', 'Solo (one full-space slot)'],
+      ['three', 'Three across'],
+    ].forEach(([value, label]) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      modeSelect.appendChild(option);
+    });
+    modeSelect.addEventListener('change', () => {
+      if (modeSelect.value === 'solo') countInput.value = '1';
+    });
+    modal.appendChild(modeSelect);
+
+    const row = document.createElement('div');
+    row.className = 'settings-row-buttons';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', close);
+    row.appendChild(cancelBtn);
+
+    const createBtn = document.createElement('button');
+    createBtn.className = 'save';
+    createBtn.textContent = 'Create';
+    createBtn.addEventListener('click', () => {
+      const slotCount = modeSelect.value === 'solo'
+        ? 1
+        : Math.min(MAX_SLOTS, Math.max(1, Number.parseInt(countInput.value, 10) || 4));
+      const name = nameInput.value.trim() || 'Layout ' + (state.boards.length + 1);
+      storage.createBoard(name, slotCount, modeSelect.value).then((id) => {
+        close();
+        if (id) LG.openBoard(id);
+      });
+    });
+    row.appendChild(createBtn);
+
+    modal.appendChild(row);
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+    nameInput.focus();
+
+    function close() {
+      if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
+    }
+  }
+
+
+Object.assign(LG, {
+    openGridSettings,
+    openConfirmDialog,
+    openNewGridDialog,
+  });
+})();
