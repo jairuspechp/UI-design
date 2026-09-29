@@ -117,6 +117,7 @@
 
   const BOARDS_KEY = 'link-grid-boards-v1';
   const MODES = ['standard', 'horizontal', 'solo', 'three'];
+const MAX_SLOTS = 4;
 
   // Ask the browser not to evict this site's data when disk space is low.
   if (navigator.storage && navigator.storage.persist) {
@@ -972,6 +973,7 @@
     const rows = [
       [['Tab'], 'Open or close this menu. Inside it, use \u2191 \u2193 and Enter.'],
       [['E'], 'Expand or collapse the link under the mouse (or collapse the one that is expanded).'],
+      [['C'], 'Change the link under the mouse (or add one if the slot is empty).'],
       [['F'], 'Turn full screen on or off.'],
       [['G'], 'Graph only: hide the toolbar and headings. Press again to bring them back.'],
       [['Esc'], 'Close the menu or a window. With nothing open, it asks to exit (Enter to confirm).'],
@@ -1143,6 +1145,43 @@
       : '<b>' + escapeHtml(slotName(board, index)) + '</b> collapsed');
   });
 
+  // ----------------------------------------------------------------------
+  // C: change the link of the slot under the mouse (same dialog as the
+  // menu's "Change link"). Falls back to the expanded slot if the mouse
+  // isn't over any slot. Works on empty slots too (opens "Add link").
+  // ----------------------------------------------------------------------
+
+  document.addEventListener('keydown', (event) => {
+    if (!isKey(event, 'c')) return;
+    if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey || event.repeat) return;
+
+    const target = event.target;
+    const tag = target && target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (target && target.isContentEditable)) return;
+    if (document.querySelector('.settings-backdrop')) return; // a dialog is open
+    if (!contentEl.classList.contains('mode-board')) return;
+
+    const board = findBoard(state.currentBoardId);
+    if (!board) return;
+
+    const expandedIndex = expandedByBoard[board.id];
+    let index = null;
+    if (hoveredSlotIndex !== null) {
+      index = hoveredSlotIndex;
+    } else if (Number.isInteger(expandedIndex)) {
+      index = expandedIndex;
+    }
+
+    if (index === null) {
+      showHint('Point at a link and press <kbd>C</kbd> to change it');
+      return;
+    }
+
+    // Stops the "c" from being typed into the dialog's input as it gets focus.
+    event.preventDefault();
+    openSettings(board, index);
+  });
+
   function toggleGraphOnly() {
     const enabled = document.body.classList.toggle('graph-only-mode');
 
@@ -1240,7 +1279,7 @@
     const cell = document.createElement('div');
     cell.className = 'cell' + (slot ? ' filled' : '') + (expandedByBoard[board.id] === index ? ' expanded' : '');
 
-    // Remember which slot the mouse is over (used by the E and Tab shortcuts).
+    // Remember which slot the mouse is over (used by the E, C and Tab shortcuts).
     cell.addEventListener('mouseenter', () => { hoveredSlotIndex = index; });
     cell.addEventListener('mouseleave', () => {
       if (hoveredSlotIndex === index) hoveredSlotIndex = null;
@@ -1365,7 +1404,7 @@
     const countInput = document.createElement('input');
     countInput.type = 'number';
     countInput.min = '1';
-    countInput.max = '20';
+    countInput.max = String(MAX_SLOTS);
     countInput.value = board.slots.length;
     modal.appendChild(countInput);
 
@@ -1412,7 +1451,7 @@
     saveBtn.addEventListener('click', async () => {
       const slotCount = modeSelect.value === 'solo'
         ? 1
-        : Math.min(20, Math.max(1, Number.parseInt(countInput.value, 10) || board.slots.length));
+        : Math.min(MAX_SLOTS, Math.max(1, Number.parseInt(countInput.value, 10) || board.slots.length));
       const removedLinks = board.slots.slice(slotCount).filter(Boolean).length;
 
       if (removedLinks) {
@@ -1634,7 +1673,7 @@
     const countInput = document.createElement('input');
     countInput.type = 'number';
     countInput.min = '1';
-    countInput.max = '8';
+    countInput.max = String(MAX_SLOTS);
     countInput.value = '4';
     modal.appendChild(countInput);
 
@@ -1675,7 +1714,7 @@
     createBtn.addEventListener('click', () => {
       const slotCount = modeSelect.value === 'solo'
         ? 1
-        : Math.min(20, Math.max(1, Number.parseInt(countInput.value, 10) || 4));
+        : Math.min(MAX_SLOTS, Math.max(1, Number.parseInt(countInput.value, 10) || 4));
       const name = nameInput.value.trim() || 'Layout ' + (state.boards.length + 1);
       storage.createBoard(name, slotCount, modeSelect.value).then((id) => {
         close();
