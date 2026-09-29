@@ -21,6 +21,29 @@
   // elsewhere, without stacking a new listener on every re-render.
   let activeMenuWrap = null;
 
+  // Auto-return timer: after 15s in expanded or fullscreen, revert to grid.
+  let autoReturnTimer = null;
+  const AUTO_RETURN_DELAY = 15000;
+
+  function clearAutoReturnTimer() {
+    if (autoReturnTimer) {
+      clearTimeout(autoReturnTimer);
+      autoReturnTimer = null;
+    }
+  }
+
+  function scheduleAutoReturn(board) {
+    clearAutoReturnTimer();
+    autoReturnTimer = setTimeout(() => {
+      if (board && expandedByBoard[board.id] !== null) {
+        toggleExpand(board, expandedByBoard[board.id]);
+      } else if (document.fullscreenElement) {
+        toggleFullscreen();
+      }
+      autoReturnTimer = null;
+    }, AUTO_RETURN_DELAY);
+  }
+
   document.addEventListener('click', (event) => {
     if (activeMenuWrap && !activeMenuWrap.contains(event.target)) {
       activeMenuWrap.classList.remove('open');
@@ -298,12 +321,14 @@
   function goHome() {
     state.currentBoardId = null;
     writeNav();
+    clearAutoReturnTimer();
     render();
   }
 
   function openBoard(id) {
     state.currentBoardId = id;
     writeNav();
+    clearAutoReturnTimer();
     render();
   }
 
@@ -645,11 +670,14 @@
   function toggleFullscreen() {
     if (document.fullscreenElement) {
       document.exitFullscreen();
+      clearAutoReturnTimer();
       return;
     }
 
     if (document.documentElement.requestFullscreen) {
       document.documentElement.requestFullscreen();
+      const board = findBoard(state.currentBoardId);
+      if (board) scheduleAutoReturn(board);
     }
   }
 
@@ -689,6 +717,7 @@
   document.addEventListener('fullscreenchange', () => {
     showFullscreenGridBtn();
     scheduleFullscreenGridBtnHide();
+    if (!document.fullscreenElement) clearAutoReturnTimer();
   });
 
   // ----------------------------------------------------------------------
@@ -1126,8 +1155,14 @@
     showFullscreenGridBtn();
     scheduleFullscreenGridBtnHide();
 
-    if (enabled) showHint('Graph only &mdash; press <kbd>G</kbd> to show the controls again');
-    else hideFullscreenHint();
+    const board = findBoard(state.currentBoardId);
+    if (enabled) {
+      showHint('Graph only &mdash; press <kbd>G</kbd> to show the controls again');
+      if (board) scheduleAutoReturn(board);
+    } else {
+      hideFullscreenHint();
+      clearAutoReturnTimer();
+    }
   }
 
   function renderBoardContent(board) {
@@ -1471,6 +1506,12 @@
     const next = current === index ? null : index;
     expandedByBoard[board.id] = next;
     topbarEl.classList.toggle('is-visible', next !== null);
+
+    if (next !== null) {
+      scheduleAutoReturn(board);
+    } else {
+      clearAutoReturnTimer();
+    }
 
     activeCellEls.forEach((cell, cellIndex) => {
       if (!cell) return;
