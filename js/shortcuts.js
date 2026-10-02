@@ -3,8 +3,14 @@
  *
  * All keyboard shortcuts in one place:
  *   F  full screen      G  graph only      E  zoom in / out
- *   C  change link      Tab  open the menu      ?  list of shortcuts
- *   Esc  close things / ask to exit
+ *   C  change link      M  open the menu       Q  exit (asks first)
+ *   ?  list of shortcuts    Esc  close the menu / a window
+ *
+ * Only plain letter keys are used (no Ctrl / Alt / F-keys), and Tab / Esc are
+ * left to the browser, so nothing here clashes with the browser's own
+ * shortcuts (Ctrl+F find, Ctrl+G, Ctrl+E search, Ctrl+C copy, F11, Tab focus,
+ * Esc leave full screen ...). Every handler ignores a key pressed together
+ * with Ctrl / Alt / Meta / Shift, and while typing in a field.
  *
  * Debug tip: every shortcut is its own document.addEventListener('keydown')
  * block with a comment above it, so a broken key is easy to find here.
@@ -28,21 +34,25 @@
   document.head.appendChild(shortcutStyle);
 
   // All shortcuts listen in the capture phase, so they run before the page
-  // (or a focused element) can swallow the key. Tab in particular would
-  // otherwise be used up moving focus around.
+  // (or a focused element) can swallow the key.
   function addKey(handler) {
     document.addEventListener('keydown', handler, true);
   }
 
-  // True when the pressed key is this letter, on any keyboard layout.
+  // True when the pressed key is this letter. A Latin letter is matched by what
+  // is typed (so AZERTY / Dvorak users get the letter printed on the key). The
+  // physical key position is only used when the layout types a non-Latin
+  // character (e.g. Cyrillic), so a different letter never fires by accident.
   function isKey(event, letter) {
-    return event.key.toLowerCase() === letter || event.code === 'Key' + letter.toUpperCase();
+    const typed = event.key;
+    if (typed && typed.length === 1 && /[a-z]/i.test(typed)) return typed.toLowerCase() === letter;
+    return event.code === 'Key' + letter.toUpperCase();
   }
 
   addKey((event) => {
     const key = isKey(event, 'f') ? 'f' : isKey(event, 'g') ? 'g' : '';
     if (!key) return;
-    if (event.ctrlKey || event.metaKey || event.altKey || event.repeat) return;
+    if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.repeat) return;
 
     const target = event.target;
     const tag = target && target.tagName;
@@ -80,7 +90,7 @@
       return;
     }
 
-    if (event.key !== 'Tab') return;
+    if (!isKey(event, 'm') || event.repeat) return;
 
     const target = event.target;
     const tag = target && target.tagName;
@@ -92,7 +102,7 @@
     const board = LG.findBoard(state.currentBoardId);
     if (!menuBtn || !board || !contentEl.classList.contains('mode-board')) return;
 
-    event.preventDefault(); // stop Tab from moving keyboard focus around
+    event.preventDefault();
 
     if (ui.activeMenuWrap) { // already open: close it
       menuBtn.click();
@@ -111,10 +121,12 @@
     if (first) first.focus();
   });
 
-  // Esc: exit (close the window). This is how you leave kiosk / app mode.
-  // Asks first, because Esc is easy to hit by accident: press Enter to
-  // confirm or Esc again to cancel. A page can only close its own window
-  // when the browser allows it; if it refuses, show the Alt+F4 fallback.
+  // Q: exit (close the window), e.g. to leave kiosk / app mode.
+  // Esc is NOT used for this any more: the browser already uses Esc (leave
+  // full screen, stop loading), so hijacking it clashed. Asks first, because a
+  // stray key press must not close the dashboard: Enter confirms, Esc cancels.
+  // A page can only close its own window when the browser allows it; if it
+  // refuses, show the Alt+F4 fallback.
   let exitDialogOpen = false;
 
   function exitApp() {
@@ -139,23 +151,31 @@
     });
   }
 
-  // Capture phase, so this runs before a dialog's own Esc handler removes
-  // the dialog (otherwise closing a dialog with Esc would also exit).
+  addKey((event) => {
+    if (!isKey(event, 'q')) return;
+    if (event.ctrlKey || event.altKey || event.shiftKey || event.metaKey || event.repeat) return;
+
+    const target = event.target;
+    const tag = target && target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (target && target.isContentEditable)) return;
+    if (document.querySelector('.settings-backdrop')) return; // a dialog is open
+
+    event.preventDefault();
+    requestExit();
+  });
+
+  // Esc only closes the app's own menu. Windows handle their own Esc, and
+  // everything else (leaving full screen, ...) is left to the browser.
   addKey((event) => {
     if (event.key !== 'Escape') return;
     if (event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return;
 
-    if (ui.activeMenuWrap && document.contains(ui.activeMenuWrap)) { // Esc closes the menu first
+    if (ui.activeMenuWrap && document.contains(ui.activeMenuWrap)) {
       event.preventDefault();
       const menuBtn = ui.activeMenuWrap.querySelector('.board-menu-btn');
       if (menuBtn) menuBtn.click();
-      return;
     }
-
-    if (document.querySelector('.settings-backdrop')) return; // a dialog is open
-    if (document.fullscreenElement) return; // the browser uses Esc to leave full screen
-    requestExit();
-  }, true);
+  });
 
   // ----------------------------------------------------------------------
   // Shortcut keys list (menu item, or press ?).
@@ -178,14 +198,15 @@
     modal.appendChild(heading);
 
     const rows = [
-      [['Tab'], 'Open or close this menu. Inside it, use \u2191 \u2193 and Enter.'],
+      [['M'], 'Open or close the menu. Inside it, use \u2191 \u2193 and Enter.'],
       [['E'], 'Zoom in on the link under the mouse (full screen + graph only), or zoom back out.'],
       [['C'], 'Change the link under the mouse (or add one if the slot is empty).'],
       [['F'], 'Turn full screen on or off.'],
       [['G'], 'Graph only: hide the toolbar and headings. Press again to bring them back. Point at the top edge to show the toolbar.'],
-      [['Esc'], 'Close the menu or a window. With nothing open, it asks to exit (Enter to confirm).'],
+      [['Q'], 'Exit the dashboard (asks first: Enter to confirm, Esc to stay).'],
+      [['Esc'], 'Close the menu or a window. (Leaving full screen is left to the browser.)'],
       [['?'], 'Show this list.'],
-      [['Alt', 'F4'], 'Close the window if Esc cannot.'],
+      [['Alt', 'F4'], 'Close the window if Q cannot.'],
     ];
 
     const list = document.createElement('div');

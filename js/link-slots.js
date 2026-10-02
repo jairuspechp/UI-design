@@ -100,23 +100,54 @@
   // mouse off a link.
   // ----------------------------------------------------------------------
 
+  // Focus is only taken back from an embedded page when it is safe to do so.
+  // Taking focus away while the visitor is using a dropdown (<select>, a menu
+  // in the page's header, a text box...) closes that dropdown immediately,
+  // which is why the shared page's dropdowns could not be selected.
+  function frameIsBusy(frame) {
+    try {
+      const doc = frame.contentDocument;
+      if (!doc) return false; // other websites cannot be inspected
+      const el = doc.activeElement;
+      if (!el) return false;
+      const tag = el.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+    } catch (error) {
+      return false;
+    }
+  }
+
   function reclaimFocus() {
     const active = document.activeElement;
-    if (active && active.tagName === 'IFRAME') active.blur();
+    if (active && active.tagName === 'IFRAME') {
+      if (frameIsBusy(active)) return; // the visitor is using a control in the page
+      active.blur();
+    }
     window.focus();
   }
 
-  // Fires when focus moves into an iframe (a click, or the page grabbing focus).
-  window.addEventListener('blur', () => {
-    setTimeout(() => {
-      const a = document.activeElement;
-      if (a && a.tagName === 'IFRAME') reclaimFocus();
-    }, 0);
-  });
+  // When the mouse leaves a link, wait until it is really back over the
+  // dashboard (a real mouse move on this page) before taking focus back. While
+  // a dropdown list is open the mouse is over the list, not over this page, so
+  // the dropdown is left alone until the visitor has finished choosing.
+  let reclaimPending = false;
+  function reclaimFocusWhenMouseIsBack() {
+    reclaimPending = true;
+  }
+  document.addEventListener('mousemove', () => {
+    if (!reclaimPending) return;
+    reclaimPending = false;
+    reclaimFocus();
+  }, true);
+
+  // Tab came back into view: safe to hand focus back to the dashboard.
   window.addEventListener('focus', reclaimFocus);
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) reclaimFocus();
   });
+
+  // Only a click on the dashboard itself (never inside an embedded page,
+  // which does not reach this document) takes focus back.
   document.addEventListener('mousedown', reclaimFocus, true);
 
   // Pages that share this page's origin can be reached, so their key presses
@@ -182,14 +213,13 @@
     const cell = document.createElement('div');
     cell.className = 'cell' + (slot ? ' filled' : '') + (expandedByBoard[board.id] === index ? ' expanded' : '');
 
-    // Remember which slot the mouse is over (used by the E, C and Tab shortcuts).
+    // Remember which slot the mouse is over (used by the E, C and M shortcuts).
     cell.addEventListener('mouseenter', () => {
       ui.hoveredSlotIndex = index;
-      reclaimFocus(); // so E, C and Tab work while the mouse is over a link
     });
     cell.addEventListener('mouseleave', () => {
       if (ui.hoveredSlotIndex === index) ui.hoveredSlotIndex = null;
-      reclaimFocus(); // so the shortcut keys work again after clicking inside a page
+      reclaimFocusWhenMouseIsBack(); // shortcut keys work again once the mouse is back on the dashboard
     });
 
     const topbar = document.createElement('div');
@@ -295,9 +325,6 @@
     const slot = board.slots[index];
     const backdrop = document.createElement('div');
     backdrop.className = 'settings-backdrop';
-    backdrop.addEventListener('click', (event) => {
-      if (event.target === backdrop) close();
-    });
 
     const modal = document.createElement('div');
     modal.className = 'settings-modal';

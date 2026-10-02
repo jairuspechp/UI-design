@@ -15,7 +15,7 @@
 
   // Slide-in / slide-out of the toolbar. The toolbar of an open layout stays
   // laid out but parked above the screen, and slides down when hovered
-  // (hover-peek) or when the ☰ menu is opened with Tab (menu-peek).
+  // (hover-peek) or when the ☰ menu is opened with M (menu-peek).
   // Change SLIDE to make it faster or slower.
   const SLIDE = '0.6s';
   const peekStyle = document.createElement('style');
@@ -97,7 +97,7 @@
       event.stopPropagation();
       closeMenu();
       // The expanded slot, else the slot that was under the mouse when the
-      // menu was opened with Tab.
+      // menu was opened with M.
       const currentIndex = Number.isInteger(expandedByBoard[board.id])
         ? expandedByBoard[board.id]
         : ui.menuChangeIndex;

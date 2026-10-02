@@ -25,13 +25,13 @@
   // Small bits of UI state that several files need to see.
   const ui = {
     activeMenuWrap: null,   // the open ☰ menu (buttons.js)
-    menuChangeIndex: null,  // slot "Change link" applies to when the menu was opened with Tab
+    menuChangeIndex: null,  // slot "Change link" applies to when the menu was opened with M
     hoveredSlotIndex: null, // slot under the mouse (link-slots.js)
   };
 
   // Auto-return timer: after 15s zoomed in on a link, revert to the grid.
   // It does NOT apply to plain full screen or graph-only mode: those stay on
-  // until you turn them off yourself (F, G or Esc).
+  // until you turn them off yourself (F or G).
   let autoReturnTimer = null;
   const AUTO_RETURN_DELAY = 15000;
 
@@ -118,58 +118,377 @@
 
   const BOARDS_KEY = 'link-grid-boards-v1';
   const MODES = ['standard', 'horizontal', 'solo', 'three'];
-const MAX_SLOTS = 4;
+  const MAX_SLOTS = 4;
+
+  // Links are saved in THREE places so they survive a restart / shutdown:
+  //   1. localStorage          (fast, read synchronously)
+  //   2. IndexedDB             (second copy, survives cases where one of the two is wiped)
+  //   3. an optional backup file on disk (Chrome / Edge "Auto-save file" button)
+  // On start-up all copies are read and the NEWEST one wins. If the browser is
+  // set to "clear site data when closed" (or runs in a private/guest window),
+  // 1 and 2 are wiped on exit; only the backup file (3) survives that.
+  const DB_NAME = 'link-grid-db';
+  const DB_STORE = 'kv';
+  const HANDLE_KEY = 'backup-file-handle';
+
+  // file: 'off' | 'on' | 'needs-permission' | 'error'
+  const storageStatus = { local: true, idb: true, file: 'off' };
+  let backupHandle = null;
+  let currentSavedAt = 0;
+  let fileWriteTimer = null;
+  let warnedAboutStorage = false;
 
   // Ask the browser not to evict this site's data when disk space is low.
-  if (navigator.storage && navigator.storage.persist) {
-    navigator.storage.persist().catch(() => {});
+  function requestPersistence() {
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persist().catch(() => {});
+    }
+  }
+  requestPersistence();
+
+  function sanitizeBoards(list) {
+    return list
+      .filter((board) => board && typeof board.id === 'string')
+      .map((board) => ({
+        id: board.id,
+        name: String(board.name || 'Untitled'),
+        layoutMode: MODES.includes(board.layoutMode) ? board.layoutMode : 'standard',
+        description: board.description || '',
+        slots: Array.isArray(board.slots)
+          ? board.slots.map((s) => (s && s.url ? { label: s.label || '', url: s.url } : null))
+          : [null, null, null, null],
+      }));
+  }
+
+  // Accepts the new { savedAt, boards } format and the old plain-array format.
+  function parseEnvelope(raw) {
+    try {
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (Array.isArray(parsed)) return { savedAt: 0, boards: sanitizeBoards(parsed) };
+      if (parsed && Array.isArray(parsed.boards)) {
+        return { savedAt: Number(parsed.savedAt) || 0, boards: sanitizeBoards(parsed.boards) };
+      }
+    } catch (error) {
+      // fall through
+    }
+    return null;
+  }
+
+  function readLocal() {
+    try {
+      const raw = localStorage.getItem(BOARDS_KEY);
+      return raw ? parseEnvelope(raw) : null;
+    } catch (error) {
+      console.error('Link Layouts: saved layouts could not be read.', error);
+      return null;
+    }
   }
 
   function loadBoards() {
+    const env = readLocal();
+    return env ? env.boards : [];
+  }
+
+  // ---- IndexedDB (second copy) ----
+  let dbPromise = null;
+
+  function idb() {
+    if (!dbPromise) {
+      dbPromise = new Promise((resolve, reject) => {
+        if (!window.indexedDB) { reject(new Error('IndexedDB not available')); return; }
+        const request = indexedDB.open(DB_NAME, 1);
+        request.onupgradeneeded = () => request.result.createObjectStore(DB_STORE);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+    return dbPromise;
+  }
+
+  function idbGet(key) {
+    return idb().then((db) => new Promise((resolve, reject) => {
+      const req = db.transaction(DB_STORE, 'readonly').objectStore(DB_STORE).get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    }));
+  }
+
+  function idbSet(key, value) {
+    return idb().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, 'readwrite');
+      tx.objectStore(DB_STORE).put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    }));
+  }
+
+  function withTimeout(promise, ms, fallback) {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(fallback), ms);
+      promise.then(
+        (value) => { clearTimeout(timer); resolve(value); },
+        () => { clearTimeout(timer); resolve(fallback); }
+      );
+    });
+  }
+
+  // ---- Backup file on disk (File System Access API: Chrome / Edge) ----
+  const fileBackupSupported = typeof window.showSaveFilePicker === 'function';
+
+  async function readBackupFile() {
     try {
-      const raw = localStorage.getItem(BOARDS_KEY);
-      if (!raw) return [];
-
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return [];
-
-      return parsed
-        .filter((board) => board && typeof board.id === 'string')
-        .map((board) => ({
-          id: board.id,
-          name: String(board.name || 'Untitled'),
-          layoutMode: MODES.includes(board.layoutMode) ? board.layoutMode : 'standard',
-          description: board.description || '',
-          slots: Array.isArray(board.slots)
-            ? board.slots.map((s) => (s && s.url ? { label: s.label || '', url: s.url } : null))
-            : [null, null, null, null],
-        }));
+      const file = await backupHandle.getFile();
+      const text = await file.text();
+      return text.trim() ? parseEnvelope(text) : null;
     } catch (error) {
-      console.error('Link Layouts: saved layouts could not be read.', error);
-      return [];
+      return null;
     }
   }
 
-  // Writes the whole list of boards. Called after every change.
-  function persist() {
-    try {
-      localStorage.setItem(BOARDS_KEY, JSON.stringify(state.boards));
-    } catch (error) {
-      console.error('Link Layouts: could not save to browser storage.', error);
+  function scheduleFileWrite(payload) {
+    if (!backupHandle || storageStatus.file !== 'on') return;
+    clearTimeout(fileWriteTimer);
+    fileWriteTimer = setTimeout(async () => {
+      try {
+        const writable = await backupHandle.createWritable();
+        await writable.write(JSON.stringify(payload, null, 2));
+        await writable.close();
+      } catch (error) {
+        console.error('Link Layouts: could not write the backup file.', error);
+        storageStatus.file = 'error';
+        refreshStatus();
+      }
+    }, 300);
+  }
+
+  function statusInfo() {
+    if (!storageStatus.local && !storageStatus.idb) {
+      return { icon: '⚠', title: 'Could not save: browser storage is blocked or full. Use Backup / Auto-save file to keep your links.', ok: false };
     }
+    if (storageStatus.file === 'needs-permission') {
+      return { icon: '💾', title: 'Saved in this browser. Click "Reconnect backup file" to resume saving to your backup file.', ok: true };
+    }
+    if (storageStatus.file === 'error') {
+      return { icon: '⚠', title: 'Saved in this browser, but writing the backup file failed.', ok: false };
+    }
+    if (storageStatus.file === 'on') {
+      return { icon: '💾', title: 'Saved in this browser and in your backup file', ok: true };
+    }
+    return { icon: '💾', title: 'Saved in this browser. Tip: use "Auto-save file" so your links survive if the browser clears its data.', ok: true };
+  }
+
+  function refreshStatus() {
+    const info = statusInfo();
+    document.querySelectorAll('[data-lg-status]').forEach((el) => {
+      el.textContent = info.icon;
+      el.title = info.title;
+      el.classList.toggle('db-status-ok', info.ok);
+    });
+
+    if (!info.ok && !warnedAboutStorage && state.loaded) {
+      warnedAboutStorage = true;
+      showHint('Could not save your links in this browser &mdash; use <b>Backup</b> on the home screen');
+    }
+  }
+
+  // Writes the whole list of boards to every store. Called after every change.
+  function persist() {
+    const payload = { savedAt: Date.now(), boards: state.boards };
+    currentSavedAt = payload.savedAt;
+
+    try {
+      localStorage.setItem(BOARDS_KEY, JSON.stringify(payload));
+      storageStatus.local = true;
+    } catch (error) {
+      storageStatus.local = false;
+      console.error('Link Layouts: could not save to localStorage.', error);
+    }
+
+    idbSet(BOARDS_KEY, payload)
+      .then(() => { storageStatus.idb = true; })
+      .catch((error) => {
+        storageStatus.idb = false;
+        console.error('Link Layouts: could not save to IndexedDB.', error);
+      })
+      .then(refreshStatus);
+
+    scheduleFileWrite(payload);
+    refreshStatus();
+  }
+
+  // Last-chance save when the tab is hidden / closed / the PC is shutting down.
+  function flushNow() {
+    if (!state.loaded || !state.boards.length) return;
+    try {
+      localStorage.setItem(BOARDS_KEY, JSON.stringify({ savedAt: currentSavedAt || Date.now(), boards: state.boards }));
+    } catch (error) {
+      // nothing more we can do here
+    }
+  }
+  window.addEventListener('pagehide', flushNow);
+  window.addEventListener('beforeunload', flushNow);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushNow();
+  });
+
+  // Reads every store and returns the newest copy that has layouts in it.
+  async function loadAll() {
+    const candidates = [];
+
+    const local = readLocal();
+    if (local) candidates.push(local);
+
+    try {
+      const fromIdb = await withTimeout(idbGet(BOARDS_KEY), 1500, null);
+      const env = fromIdb ? parseEnvelope(fromIdb) : null;
+      if (env) candidates.push(env);
+    } catch (error) {
+      storageStatus.idb = false;
+    }
+
+    try {
+      const handle = await withTimeout(idbGet(HANDLE_KEY), 1500, null);
+      if (handle && typeof handle.queryPermission === 'function') {
+        backupHandle = handle;
+        const permission = await withTimeout(handle.queryPermission({ mode: 'readwrite' }), 1500, 'prompt');
+        if (permission === 'granted') {
+          storageStatus.file = 'on';
+          const env = await readBackupFile();
+          if (env) candidates.push(env);
+        } else {
+          storageStatus.file = 'needs-permission';
+        }
+      }
+    } catch (error) {
+      // no backup file configured
+    }
+
+    let best = null;
+    candidates.forEach((env) => {
+      if (env.boards.length && (!best || env.savedAt > best.savedAt)) best = env;
+    });
+    return best;
   }
 
   function initStorage() {
     readNav();
-    state.boards = loadBoards();
+    state.loaded = false;
+    render(); // "Loading your layouts…" while the stores are read
 
-    if (!state.boards.length) {
-      state.boards.push(blankBoard('Layout 1'));
+    loadAll()
+      .catch((error) => {
+        console.error('Link Layouts: loading failed.', error);
+        return null;
+      })
+      .then((best) => {
+        state.boards = best ? best.boards : [];
+        currentSavedAt = best ? best.savedAt : 0;
+
+        if (!state.boards.length) state.boards.push(blankBoard('Layout 1'));
+
+        state.loaded = true;
+        persist(); // heals every store with the newest copy
+        render();
+      });
+  }
+
+  // ---- Manual backup / restore, and the auto-save file ----
+  function exportBackup() {
+    const data = { app: 'link-grid', savedAt: Date.now(), boards: state.boards };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'multiview-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+    showHint('Backup file downloaded');
+  }
+
+  function importBackup() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.addEventListener('change', async () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+
+      const env = parseEnvelope(await file.text());
+      if (!env || !env.boards.length) {
+        showHint('That file is not a valid backup');
+        return;
+      }
+
+      const confirmed = await LG.openConfirmDialog({
+        title: 'Restore backup?',
+        message: 'This replaces your current layouts with the ' + env.boards.length + ' layout(s) in the file.',
+        confirmLabel: 'Restore',
+      });
+      if (!confirmed) return;
+
+      state.boards = env.boards;
+      if (!findBoard(state.currentBoardId)) state.currentBoardId = null;
       persist();
+      render();
+      showHint('Backup restored');
+    });
+    input.click();
+  }
+
+  async function chooseBackupFile() {
+    if (!fileBackupSupported) {
+      showHint('Auto-save file needs Chrome or Edge &mdash; use <b>Backup</b> instead');
+      return;
     }
 
-    state.loaded = true;
-    render();
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: 'multiview-links.json',
+        types: [{ description: 'JSON file', accept: { 'application/json': ['.json'] } }],
+      });
+
+      backupHandle = handle;
+      storageStatus.file = 'on';
+      idbSet(HANDLE_KEY, handle).catch(() => {});
+
+      // Picked a file that already has links, and nothing is set up here yet: load them.
+      const existing = await readBackupFile();
+      const hasLinks = state.boards.some((board) => board.slots.some(Boolean));
+      if (existing && existing.boards.length && !hasLinks) {
+        state.boards = existing.boards;
+        if (!findBoard(state.currentBoardId)) state.currentBoardId = null;
+      }
+
+      persist();
+      render();
+      showHint('Auto-save file is on &mdash; links are also saved to that file');
+    } catch (error) {
+      // cancelled by the user
+    }
+  }
+
+  async function reconnectBackupFile() {
+    if (!backupHandle) return;
+
+    try {
+      const permission = await backupHandle.requestPermission({ mode: 'readwrite' });
+      if (permission !== 'granted') return;
+
+      storageStatus.file = 'on';
+      const existing = await readBackupFile();
+      if (existing && existing.boards.length && existing.savedAt > currentSavedAt) {
+        state.boards = existing.boards;
+        if (!findBoard(state.currentBoardId)) state.currentBoardId = null;
+      }
+
+      persist();
+      render();
+      showHint('Backup file reconnected');
+    } catch (error) {
+      console.error('Link Layouts: could not reconnect the backup file.', error);
+    }
   }
 
   const storage = {
@@ -338,11 +657,36 @@ const MAX_SLOTS = 4;
 
     topbarEl.appendChild(buildLiveClock());
 
+    // Backup / restore / auto-save file buttons.
+    function homeButton(text, tip, run) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = text;
+      button.title = tip;
+      button.style.cssText = 'margin-right:8px;padding:5px 10px;border-radius:6px;cursor:pointer;' +
+        'font:600 12px system-ui,sans-serif;color:inherit;background:rgba(255,255,255,.08);' +
+        'border:1px solid rgba(255,255,255,.25)';
+      button.addEventListener('click', run);
+      return button;
+    }
+
+    if (fileBackupSupported) {
+      if (storageStatus.file === 'needs-permission') {
+        topbarEl.appendChild(homeButton('📁 Reconnect backup file', 'Allow saving to your backup file again', reconnectBackupFile));
+      } else if (storageStatus.file === 'on') {
+        topbarEl.appendChild(homeButton('📁 Auto-save: on', 'Links are also saved to your backup file. Click to choose a different file.', chooseBackupFile));
+      } else {
+        topbarEl.appendChild(homeButton('📁 Auto-save file', 'Also save your links to a file on disk, so they survive even if the browser clears its data', chooseBackupFile));
+      }
+    }
+    topbarEl.appendChild(homeButton('⬇ Backup', 'Download your layouts and links as a file', exportBackup));
+    topbarEl.appendChild(homeButton('⬆ Restore', 'Load layouts and links from a backup file', importBackup));
+
     const status = document.createElement('div');
     status.className = 'db-status-btn db-status-ok';
-    status.textContent = '💾';
-    status.title = 'Saved in this browser — your layouts stay until the browser\'s site data is cleared';
+    status.setAttribute('data-lg-status', '');
     topbarEl.appendChild(status);
+    refreshStatus();
   }
 
   // Logo mark, shared between the home and board toolbars.
@@ -652,6 +996,10 @@ const MAX_SLOTS = 4;
     loadBoards,
     persist,
     initStorage,
+    exportBackup,
+    importBackup,
+    chooseBackupFile,
+    reconnectBackupFile,
     domainOf,
     normalizeUrl,
     hashString,
