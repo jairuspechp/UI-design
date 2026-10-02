@@ -21,18 +21,6 @@
   const topbarEl = document.getElementById('topbar');
   const contentEl = document.getElementById('content');
 
-  const shortcutStyle = document.createElement('style');
-  shortcutStyle.textContent = [
-    '.shortcut-list{display:grid;grid-template-columns:auto 1fr;gap:12px 18px;align-items:center;margin:10px 0 14px;text-align:left}',
-    '.shortcut-list .sc-keys{white-space:nowrap}',
-    '.shortcut-list kbd{display:inline-block;min-width:26px;padding:3px 9px;border-radius:6px;background:#fff;',
-    'color:#0f1115;font:700 12px/1.4 system-ui,sans-serif;text-align:center;box-shadow:0 2px 0 rgba(0,0,0,.35)}',
-    '.shortcut-list .sc-plus{margin:0 4px;opacity:.7}',
-    '.shortcut-list .sc-text{font-size:14px;line-height:1.4}',
-    '.shortcuts-tip{font-size:13px;line-height:1.5;opacity:.8;margin-bottom:14px;text-align:left}',
-  ].join('');
-  document.head.appendChild(shortcutStyle);
-
   // All shortcuts listen in the capture phase, so they run before the page
   // (or a focused element) can swallow the key.
   function addKey(handler) {
@@ -191,7 +179,7 @@
     });
 
     const modal = document.createElement('div');
-    modal.className = 'settings-modal';
+    modal.className = 'settings-modal shortcuts-modal';
 
     const heading = document.createElement('h3');
     heading.textContent = 'Shortcut keys';
@@ -211,28 +199,35 @@
 
     const list = document.createElement('div');
     list.className = 'shortcut-list';
-    rows.forEach(([keys, text]) => {
-      const keyCell = document.createElement('div');
-      keyCell.className = 'sc-keys';
-      keys.forEach((name, i) => {
-        if (i > 0) {
-          const plus = document.createElement('span');
-          plus.className = 'sc-plus';
-          plus.textContent = '+';
-          keyCell.appendChild(plus);
-        }
-        const kbd = document.createElement('kbd');
-        kbd.textContent = name;
-        keyCell.appendChild(kbd);
-      });
+   rows.forEach(([keys, text]) => {
+  const item = document.createElement('div');
+  item.className = 'shortcut-item';
 
-      const textCell = document.createElement('div');
-      textCell.className = 'sc-text';
-      textCell.textContent = text;
+  const keyCell = document.createElement('div');
+  keyCell.className = 'sc-keys';
 
-      list.appendChild(keyCell);
-      list.appendChild(textCell);
-    });
+  keys.forEach((name, i) => {
+    if (i > 0) {
+      const plus = document.createElement('span');
+      plus.className = 'sc-plus';
+      plus.textContent = '+';
+      keyCell.appendChild(plus);
+    }
+
+    const kbd = document.createElement('kbd');
+    kbd.textContent = name;
+    keyCell.appendChild(kbd);
+  });
+
+  const textCell = document.createElement('div');
+  textCell.className = 'sc-text';
+  textCell.textContent = text;
+
+  item.appendChild(keyCell);
+  item.appendChild(textCell);
+
+  list.appendChild(item);
+});
     modal.appendChild(list);
 
     const tip = document.createElement('div');
