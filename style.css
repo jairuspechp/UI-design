@@ -1166,3 +1166,30 @@ body.graph-only-mode .exit-graph-only-btn:hover {
   display: block;
   animation: icon-fly-in 0.45s ease;
 }
+/* Remove-layout button on a layout tile (layouts page). */
+.tile-remove-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--cell-border-filled);
+  background: var(--panel);
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.board-tile:hover .tile-remove-btn,
+.tile-remove-btn:focus-visible {
+  opacity: 1;
+}
+
+.tile-remove-btn:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+} 

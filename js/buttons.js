@@ -18,15 +18,6 @@
   ].join('');
   document.head.appendChild(peekStyle);
 
-  // Compact menu: smaller panel and items so it stays small on screen.
-  const menuStyle = document.createElement('style');
-  menuStyle.textContent = [
-    '.board-menu-panel{gap:2px;padding:4px;border-radius:8px}',
-    '.board-menu-panel .board-menu-item{padding:6px 12px;gap:8px;font-size:13px;border-radius:6px}',
-    '.board-menu-panel .board-menu-item::before{border-radius:6px}',
-  ].join('');
-  document.head.appendChild(menuStyle);
-
   document.addEventListener('click', (event) => {
     if (ui.activeMenuWrap && !ui.activeMenuWrap.contains(event.target)) {
       ui.activeMenuWrap.classList.remove('open');

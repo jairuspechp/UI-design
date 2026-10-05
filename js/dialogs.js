@@ -81,6 +81,17 @@
     const row = document.createElement('div');
     row.className = 'settings-row-buttons';
 
+    // Remove this whole layout (asks first).
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'danger';
+    removeBtn.textContent = 'Remove layout';
+    removeBtn.addEventListener('click', async () => {
+      const removed = await confirmRemoveBoard(board);
+      if (removed) close();
+    });
+    row.appendChild(removeBtn);
+
     const cancelBtn = document.createElement('button');
     cancelBtn.textContent = 'Cancel';
     cancelBtn.addEventListener('click', close);
@@ -181,6 +192,22 @@
     });
   }
 
+  // Remove a whole layout (asks first). Used by the layouts page and the menu.
+  async function confirmRemoveBoard(board) {
+    const links = board.slots.filter(Boolean).length;
+    const confirmed = await openConfirmDialog({
+      title: 'Remove layout?',
+      message: '"' + board.name + '" will be removed' +
+        (links ? ' together with its ' + links + ' link' + (links === 1 ? '' : 's') : '') +
+        '. This cannot be undone.',
+      confirmLabel: 'Remove',
+    });
+    if (!confirmed) return false;
+    storage.deleteBoard(board);
+    LG.showHint('Layout removed');
+    return true;
+  }
+
   function openNewGridDialog() {
     const backdrop = document.createElement('div');
     backdrop.className = 'settings-backdrop';
@@ -278,5 +305,6 @@ Object.assign(LG, {
     openGridSettings,
     openConfirmDialog,
     openNewGridDialog,
+    confirmRemoveBoard,
   });
 })();
