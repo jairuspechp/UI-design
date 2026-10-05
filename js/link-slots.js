@@ -1,21 +1,9 @@
-/*
- * link-slots.js
- *
- * The link placeholders (slots): the grid of cells, the empty "+ Add a link"
- * state, the embedded page frames, the Add/Edit link dialog and keeping
- * keyboard focus on the dashboard when you click inside an embedded page.
- *
- * Debug tip: LinkGrid.ui.hoveredSlotIndex is the slot under the mouse.
- */
 (function () {
   const LG = window.LinkGrid;
   const { state, storage, expandedByBoard, ui } = LG;
   const topbarEl = document.getElementById('topbar');
   const contentEl = document.getElementById('content');
 
-  // How wide the embedded page "thinks" the screen is. Bigger = more of the
-  // page fits (true full-screen look, smaller text). Smaller = larger, clearer
-  // text.
   const MONITOR_MIN_WIDTH = 1280;
   const MONITOR_MAX_WIDTH = 1920;
 
@@ -91,19 +79,6 @@
     }
   }
 
-  // ----------------------------------------------------------------------
-  // Keeping the keys working.
-  // Key presses go to whatever has focus. After you click inside an embedded
-  // page, or come back to this tab, focus can still be sitting inside that
-  // page, so the shortcuts never see the key. These hand focus back to the
-  // dashboard when you click the dashboard, return to the tab, or move the
-  // mouse off a link.
-  // ----------------------------------------------------------------------
-
-  // Focus is only taken back from an embedded page when it is safe to do so.
-  // Taking focus away while the visitor is using a dropdown (<select>, a menu
-  // in the page's header, a text box...) closes that dropdown immediately,
-  // which is why the shared page's dropdowns could not be selected.
   function frameIsBusy(frame) {
     try {
       const doc = frame.contentDocument;
@@ -126,10 +101,6 @@
     window.focus();
   }
 
-  // When the mouse leaves a link, wait until it is really back over the
-  // dashboard (a real mouse move on this page) before taking focus back. While
-  // a dropdown list is open the mouse is over the list, not over this page, so
-  // the dropdown is left alone until the visitor has finished choosing.
   let reclaimPending = false;
   function reclaimFocusWhenMouseIsBack() {
     reclaimPending = true;
@@ -140,18 +111,15 @@
     reclaimFocus();
   }, true);
 
-  // Tab came back into view: safe to hand focus back to the dashboard.
+
   window.addEventListener('focus', reclaimFocus);
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) reclaimFocus();
   });
 
-  // Only a click on the dashboard itself (never inside an embedded page,
-  // which does not reach this document) takes focus back.
   document.addEventListener('mousedown', reclaimFocus, true);
 
-  // Pages that share this page's origin can be reached, so their key presses
-  // are passed on to the shortcuts (except while typing in a field there).
+
   function forwardFrameKeys(frame) {
     let frameDoc = null;
     try { frameDoc = frame.contentDocument; } catch (error) { return; }
@@ -339,7 +307,7 @@
     modal.appendChild(urlLabel);
 
     const urlInput = document.createElement('input');
-    urlInput.placeholder = 'example.com or C:\\path\\file.html';
+    urlInput.placeholder = 'example.com or C:\\path\\file.html (leave empty for no link)';
     urlInput.value = slot ? slot.url : '';
     modal.appendChild(urlInput);
 
@@ -366,8 +334,16 @@
     saveBtn.textContent = 'Save';
     saveBtn.addEventListener('click', () => {
       const url = LG.normalizeUrl(urlInput.value);
+
+      // Empty URL = no link: the slot is cleared and goes back to
+      // "+ Add a link".
       if (!url) {
-        urlInput.focus();
+        if (slot) {
+          // If this slot is zoomed in, zoom back out first.
+          if (expandedByBoard[board.id] === index) LG.toggleExpand(board, index);
+          storage.saveSlot(board, index, null);
+        }
+        close();
         return;
       }
 

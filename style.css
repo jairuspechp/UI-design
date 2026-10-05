@@ -1192,4 +1192,23 @@ body.graph-only-mode .exit-graph-only-btn:hover {
 .tile-remove-btn:hover {
   color: var(--danger);
   border-color: var(--danger);
-} 
+}
+
+/* Marks the layout that opens first at start-up (layouts page). */
+.board-tile.start-tile {
+  border-color: var(--focus);
+}
+
+.start-badge {
+  position: absolute;
+  top: -11px;
+  left: 12px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--focus);
+  color: #f5fffb;
+  font: 700 11px system-ui, sans-serif;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  pointer-events: auto;
+}

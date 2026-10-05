@@ -13,6 +13,26 @@
 
   const MAX_SLOTS = LG.MAX_SLOTS;
 
+  // "Number of slots" dropdown (1 to MAX_SLOTS). A layout saved with more
+  // slots than that keeps its current number as an extra choice.
+  function buildCountSelect(selected) {
+    const select = document.createElement('select');
+    select.className = 'settings-select';
+    select.setAttribute('aria-label', 'Number of slots');
+
+    const counts = Array.from({ length: MAX_SLOTS }, (_, i) => i + 1);
+    if (!counts.includes(selected)) counts.push(selected);
+
+    counts.forEach((count) => {
+      const option = document.createElement('option');
+      option.value = String(count);
+      option.textContent = count + (count === 1 ? ' slot' : ' slots');
+      option.selected = count === selected;
+      select.appendChild(option);
+    });
+    return select;
+  }
+
   function openGridSettings(board) {
     const backdrop = document.createElement('div');
     backdrop.className = 'settings-backdrop';
@@ -42,11 +62,7 @@
     countLabel.textContent = 'Number of slots';
     modal.appendChild(countLabel);
 
-    const countInput = document.createElement('input');
-    countInput.type = 'number';
-    countInput.min = '1';
-    countInput.max = String(MAX_SLOTS);
-    countInput.value = board.slots.length;
+    const countInput = buildCountSelect(board.slots.length);
     modal.appendChild(countInput);
 
     const modeLabel = document.createElement('div');
@@ -237,11 +253,7 @@
     countLabel.textContent = 'Number of slots';
     modal.appendChild(countLabel);
 
-    const countInput = document.createElement('input');
-    countInput.type = 'number';
-    countInput.min = '1';
-    countInput.max = String(MAX_SLOTS);
-    countInput.value = '4';
+    const countInput = buildCountSelect(4);
     modal.appendChild(countInput);
 
     const modeLabel = document.createElement('div');

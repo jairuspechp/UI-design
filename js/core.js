@@ -403,6 +403,15 @@
     return best;
   }
 
+  // The layout the app opens on at start-up (null = the layouts page): the one
+  // that was open, else the last one opened, else the first layout that has a
+  // link. Used by initStorage() and to mark that layout on the layouts page.
+  function pickStartBoard() {
+    const hasLinks = (board) => Boolean(board) && linkCount(board) > 0;
+    return [findBoard(state.currentBoardId), findBoard(state.lastBoardId)]
+      .find(hasLinks) || state.boards.find(hasLinks) || null;
+  }
+
   function initStorage() {
     readNav();
     state.loaded = false;
@@ -421,9 +430,7 @@
         // has links, the app opens on it first (the one that was open, else the
         // last one opened, else the first layout that has a link). If nothing
         // has a link yet, the layouts page is shown with "Add layout".
-        const hasLinks = (board) => Boolean(board) && linkCount(board) > 0;
-        const startBoard = [findBoard(state.currentBoardId), findBoard(state.lastBoardId)]
-          .find(hasLinks) || state.boards.find(hasLinks) || null;
+        const startBoard = pickStartBoard();
         state.currentBoardId = startBoard ? startBoard.id : null;
         state.lastBoardId = startBoard ? startBoard.id : null;
         writeNav();
@@ -800,9 +807,19 @@
     const list = document.createElement('div');
     list.className = 'board-list';
 
+    const startBoard = pickStartBoard();
+
     state.boards.forEach((board) => {
       const tile = document.createElement('div');
-      tile.className = 'board-tile';
+      tile.className = 'board-tile' + (startBoard && startBoard.id === board.id ? ' start-tile' : '');
+
+      if (startBoard && startBoard.id === board.id) {
+        const badge = document.createElement('div');
+        badge.className = 'start-badge';
+        badge.textContent = '\u25B6 Opens first at start-up';
+        badge.title = 'This layout opens first after the app is restarted or the PC is shut down and started again';
+        tile.appendChild(badge);
+      }
 
       const mini = document.createElement('div');
       mini.className = 'mini-grid';
