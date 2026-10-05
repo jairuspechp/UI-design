@@ -13,6 +13,36 @@
 
   const MAX_SLOTS = LG.MAX_SLOTS;
 
+  // Wraps a dropdown with a down arrow that turns upside down while the list
+  // is open and back again when it closes (a choice is made, Esc, or you
+  // click away).
+  function wrapSelect(select) {
+    const wrap = document.createElement('div');
+    wrap.className = 'select-wrap';
+
+    const arrow = document.createElement('span');
+    arrow.className = 'select-arrow';
+    arrow.setAttribute('aria-hidden', 'true');
+    arrow.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+    const setOpen = (open) => wrap.classList.toggle('open', open);
+
+    // Clicking the box opens the list, clicking it again closes it.
+    select.addEventListener('mousedown', () => setOpen(!wrap.classList.contains('open')));
+    select.addEventListener('change', () => setOpen(false));
+    select.addEventListener('blur', () => setOpen(false));
+    select.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' || event.key === 'Enter' || event.key === 'Tab') setOpen(false);
+      else if (event.key === ' ' || event.key === 'F4' || (event.altKey && (event.key === 'ArrowDown' || event.key === 'ArrowUp'))) {
+        setOpen(!wrap.classList.contains('open'));
+      }
+    });
+
+    wrap.appendChild(select);
+    wrap.appendChild(arrow);
+    return wrap;
+  }
+
   // "Number of slots" dropdown (1 to MAX_SLOTS). A layout saved with more
   // slots than that keeps its current number as an extra choice.
   function buildCountSelect(selected) {
@@ -63,7 +93,7 @@
     modal.appendChild(countLabel);
 
     const countInput = buildCountSelect(board.slots.length);
-    modal.appendChild(countInput);
+    modal.appendChild(wrapSelect(countInput));
 
     const modeLabel = document.createElement('div');
     modeLabel.className = 'settings-field-label';
@@ -87,7 +117,7 @@
     modeSelect.addEventListener('change', () => {
       if (modeSelect.value === 'solo') countInput.value = '1';
     });
-    modal.appendChild(modeSelect);
+    modal.appendChild(wrapSelect(modeSelect));
 
     const hint = document.createElement('div');
     hint.className = 'settings-hint';
@@ -254,7 +284,7 @@
     modal.appendChild(countLabel);
 
     const countInput = buildCountSelect(4);
-    modal.appendChild(countInput);
+    modal.appendChild(wrapSelect(countInput));
 
     const modeLabel = document.createElement('div');
     modeLabel.className = 'settings-field-label';
@@ -277,7 +307,7 @@
     modeSelect.addEventListener('change', () => {
       if (modeSelect.value === 'solo') countInput.value = '1';
     });
-    modal.appendChild(modeSelect);
+    modal.appendChild(wrapSelect(modeSelect));
 
     const row = document.createElement('div');
     row.className = 'settings-row-buttons';

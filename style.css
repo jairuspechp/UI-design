@@ -1212,3 +1212,31 @@ body.graph-only-mode .exit-graph-only-btn:hover {
   white-space: nowrap;
   pointer-events: auto;
 }
+
+/* Dropdown with a custom arrow that flips while the list is open. */
+.select-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.select-wrap select {
+  padding-right: 30px;
+  cursor: pointer;
+}
+
+.select-arrow {
+  position: absolute;
+  top: 0;
+  right: 10px;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  color: var(--text-dim);
+  pointer-events: none;
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.select-wrap.open .select-arrow {
+  transform: rotate(180deg);
+  color: var(--text);
+}
