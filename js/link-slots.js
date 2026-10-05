@@ -371,43 +371,12 @@
         return;
       }
 
-  function saveLink() {
-  let url = urlInput.value.trim();
-  const label = labelInput.value.trim();
-
-  if (!url) {
-    urlInput.focus();
-    return;
-  }
-
-  // Add https:// when no protocol was entered.
-  if (!/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(url)) {
-    url = 'https://' + url;
-  }
-
-  storage.setSlot(board, index, {
-    label: label,
-    url: url
-  });
-
-  close();
-
-  // Only refresh this link.
-  // Other iframe links remain untouched.
-  refreshCell(board, index);
-}
-
-function saveOnEnter(event) {
-  if (event.key !== 'Enter') return;
-
-  event.preventDefault();
-  saveLink();
-}
-      storage.saveSlot(board, index, { label: labelInput.value.trim(), url });
+      // Save ONLY this slot. The same URL in other slots is allowed and
+      // those slots are left untouched (storage.saveSlot refreshes just
+      // this one cell, so the other frames do not reload).
+      storage.saveSlot(board, index, { label: labelInput.value.trim(), url: url });
       close();
     });
-
-
 
     row.appendChild(saveBtn);
     modal.appendChild(row);

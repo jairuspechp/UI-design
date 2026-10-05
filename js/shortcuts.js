@@ -1,36 +1,14 @@
-/*
- * shortcuts.js
- *
- * All keyboard shortcuts in one place:
- *   F  full screen      G  graph only      E  zoom in / out
- *   C  change link      M  open the menu       Q  exit (asks first)
- *   ?  list of shortcuts    Esc  close the menu / a window
- *
- * Only plain letter keys are used (no Ctrl / Alt / F-keys), and Tab / Esc are
- * left to the browser, so nothing here clashes with the browser's own
- * shortcuts (Ctrl+F find, Ctrl+G, Ctrl+E search, Ctrl+C copy, F11, Tab focus,
- * Esc leave full screen ...). Every handler ignores a key pressed together
- * with Ctrl / Alt / Meta / Shift, and while typing in a field.
- *
- * Debug tip: every shortcut is its own document.addEventListener('keydown')
- * block with a comment above it, so a broken key is easy to find here.
- */
 (function () {
   const LG = window.LinkGrid;
   const { state, storage, expandedByBoard, ui } = LG;
   const topbarEl = document.getElementById('topbar');
   const contentEl = document.getElementById('content');
 
-  // All shortcuts listen in the capture phase, so they run before the page
-  // (or a focused element) can swallow the key.
+
   function addKey(handler) {
     document.addEventListener('keydown', handler, true);
   }
 
-  // True when the pressed key is this letter. A Latin letter is matched by what
-  // is typed (so AZERTY / Dvorak users get the letter printed on the key). The
-  // physical key position is only used when the layout types a non-Latin
-  // character (e.g. Cyrillic), so a different letter never fires by accident.
   function isKey(event, letter) {
     const typed = event.key;
     if (typed && typed.length === 1 && /[a-z]/i.test(typed)) return typed.toLowerCase() === letter;
@@ -109,12 +87,6 @@
     if (first) first.focus();
   });
 
-  // Q: exit (close the window), e.g. to leave kiosk / app mode.
-  // Esc is NOT used for this any more: the browser already uses Esc (leave
-  // full screen, stop loading), so hijacking it clashed. Asks first, because a
-  // stray key press must not close the dashboard: Enter confirms, Esc cancels.
-  // A page can only close its own window when the browser allows it; if it
-  // refuses, show the Alt+F4 fallback.
   let exitDialogOpen = false;
 
   function exitApp() {
@@ -150,6 +122,25 @@
 
     event.preventDefault();
     requestExit();
+  });
+
+  // S: grid setting (same dialog as the menu's "grid setting").
+  addKey((event) => {
+    if (!isKey(event, 's')) return;
+    if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey || event.repeat) return;
+
+    const target = event.target;
+    const tag = target && target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (target && target.isContentEditable)) return;
+    if (document.querySelector('.settings-backdrop')) return; // a dialog is open
+    if (!contentEl.classList.contains('mode-board')) return;
+
+    const board = LG.findBoard(state.currentBoardId);
+    if (!board) return;
+
+    // Stops the "s" from being typed into the dialog's first field as it gets focus.
+    event.preventDefault();
+    LG.openGridSettings(board);
   });
 
   // Esc only closes the app's own menu. Windows handle their own Esc, and
@@ -188,6 +179,7 @@
     const rows = [
       [['M'], 'Open or close the menu. Inside it, use \u2191 \u2193 and Enter.'],
       [['E'], 'Zoom in on the link under the mouse (full screen + graph only), or zoom back out.'],
+      [['S'], 'Open grid setting: layout name, number of slots and layout style.'],
       [['C'], 'Change the link under the mouse (or add one if the slot is empty).'],
       [['F'], 'Turn full screen on or off.'],
       [['G'], 'Graph only: hide the toolbar and headings. Press again to bring them back. Point at the top edge to show the toolbar.'],
@@ -273,13 +265,6 @@
     event.preventDefault();
     openShortcutsDialog();
   });
-
-  // ----------------------------------------------------------------------
-  // E: expand / collapse a link (same as the arrow button on its holder).
-  // Collapses the expanded slot, otherwise expands the slot under the mouse.
-  // If the mouse is over an empty slot, tell the user there's no link and
-  // let them add one on the spot.
-  // ----------------------------------------------------------------------
 
 
   addKey((event) => {

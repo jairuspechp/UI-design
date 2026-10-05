@@ -1,22 +1,9 @@
-/*
- * buttons.js
- *
- * Everything clickable in the toolbar and on the slots: the ☰ menu, the
- * graph-only toggle, the ↗ / ✕ zoom button, the ✕ close button, and the
- * slide-down toolbar that appears when the mouse touches the top edge.
- *
- * Debug tip: LinkGrid.ui.activeMenuWrap is the open menu (or null).
- */
 (function () {
   const LG = window.LinkGrid;
   const { state, storage, expandedByBoard, ui } = LG;
   const topbarEl = document.getElementById('topbar');
   const contentEl = document.getElementById('content');
 
-  // Slide-in / slide-out of the toolbar. The toolbar of an open layout stays
-  // laid out but parked above the screen, and slides down when hovered
-  // (hover-peek) or when the ☰ menu is opened with M (menu-peek).
-  // Change SLIDE to make it faster or slower.
   const SLIDE = '0.6s';
   const peekStyle = document.createElement('style');
   peekStyle.textContent = [
@@ -30,6 +17,15 @@
     'transition:transform ' + SLIDE + ' ease,opacity ' + SLIDE + ' ease,visibility 0s !important}',
   ].join('');
   document.head.appendChild(peekStyle);
+
+  // Compact menu: smaller panel and items so it stays small on screen.
+  const menuStyle = document.createElement('style');
+  menuStyle.textContent = [
+    '.board-menu-panel{gap:2px;padding:4px;border-radius:8px}',
+    '.board-menu-panel .board-menu-item{padding:6px 12px;gap:8px;font-size:13px;border-radius:6px}',
+    '.board-menu-panel .board-menu-item::before{border-radius:6px}',
+  ].join('');
+  document.head.appendChild(menuStyle);
 
   document.addEventListener('click', (event) => {
     if (ui.activeMenuWrap && !ui.activeMenuWrap.contains(event.target)) {
